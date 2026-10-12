@@ -1,0 +1,59 @@
+{
+  "name": "train-fund-manager-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "db:validate": "prisma validate",
+    "db:generate": "prisma generate",
+    "db:check-migration": "tsx src/scripts/check-migration-connection.ts",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:setup-runtime": "tsx src/scripts/setup-runtime-db.ts",
+    "db:verify-runtime": "tsx src/scripts/verify-runtime-db.ts",
+    "db:inventory": "tsx src/scripts/inventory-db.ts",
+    "db:reconcile": "tsx src/scripts/reconcile-finance.ts",
+    "qa:benchmark": "tsx src/scripts/benchmark-reports.ts",
+    "owner:bootstrap": "tsx src/scripts/bootstrap-owner.ts",
+    "owner:recovery-code": "tsx src/scripts/issue-recovery-code.ts",
+    "auth:dev-keys": "tsx src/scripts/generate-dev-keys.ts"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "argon2": "^0.45.1",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.1.0",
+    "jose": "^6.2.12",
+    "pg": "^8.23.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.37.0",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.18.8",
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^6.0.3",
+    "eslint": "^9.37.0",
+    "prisma": "^7.10.0",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.0",
+    "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.2",
+    "mysql2": "^3.24.5"
+  }
+}

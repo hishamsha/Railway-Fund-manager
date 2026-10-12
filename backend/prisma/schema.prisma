@@ -1,0 +1,244 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["app"]
+}
+
+model AppUser {
+  id                 String       @id @default(uuid()) @db.Uuid
+  emailNormalized    String       @unique @map("email_normalized")
+  passwordHash       String       @map("password_hash")
+  displayName        String?      @map("display_name")
+  isActive           Boolean      @default(true) @map("is_active")
+  passwordChangedAt  DateTime?    @map("password_changed_at") @db.Timestamptz(6)
+  passwordResetHash  String?      @map("password_reset_hash")
+  passwordResetExpiresAt DateTime? @map("password_reset_expires_at") @db.Timestamptz(6)
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  sessions           AuthSession[]
+  packagers          Packager[]
+  bookings           Booking[]
+  wallets            Wallet[]
+  customerEntries    CustomerFundEntry[]
+  bookingDeductions  BookingDeductionEntry[]
+  walletEntries      WalletEntry[]
+  operations         OperationRequest[]
+  ownedAuditEvents   AuditEvent[] @relation("AuditOwner")
+  actorAuditEvents   AuditEvent[] @relation("AuditActor")
+
+  @@map("app_users")
+  @@schema("app")
+}
+
+model AuthSession {
+  id                String         @id @default(uuid()) @db.Uuid
+  userId            String         @map("user_id") @db.Uuid
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt        DateTime       @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  absoluteExpiresAt DateTime       @map("absolute_expires_at") @db.Timestamptz(6)
+  revokedAt         DateTime?      @map("revoked_at") @db.Timestamptz(6)
+  revocationReason  String?        @map("revocation_reason")
+  user              AppUser        @relation(fields: [userId], references: [id])
+  refreshTokens     RefreshToken[]
+
+  @@index([userId, revokedAt])
+  @@map("auth_sessions")
+  @@schema("app")
+}
+
+model RefreshToken {
+  id                String        @id @default(uuid()) @db.Uuid
+  sessionId         String        @map("session_id") @db.Uuid
+  tokenHash         String        @unique @map("token_hash")
+  issuedAt          DateTime      @default(now()) @map("issued_at") @db.Timestamptz(6)
+  expiresAt         DateTime      @map("expires_at") @db.Timestamptz(6)
+  consumedAt        DateTime?     @map("consumed_at") @db.Timestamptz(6)
+  revokedAt         DateTime?     @map("revoked_at") @db.Timestamptz(6)
+  replacedByTokenId String?       @unique @map("replaced_by_token_id") @db.Uuid
+  session           AuthSession   @relation(fields: [sessionId], references: [id])
+  replacedBy        RefreshToken? @relation("TokenRotation", fields: [sessionId, replacedByTokenId], references: [sessionId, id])
+  replaces          RefreshToken? @relation("TokenRotation")
+
+  @@index([sessionId, consumedAt, revokedAt])
+  @@unique([sessionId, id])
+  @@unique([sessionId, replacedByTokenId])
+  @@map("refresh_tokens")
+  @@schema("app")
+}
+
+model Packager {
+  id         String    @id @default(uuid()) @db.Uuid
+  ownerId    String    @map("owner_id") @db.Uuid
+  name       String
+  phone      String?
+  notes      String?
+  isArchived Boolean   @default(false) @map("is_archived")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner      AppUser   @relation(fields: [ownerId], references: [id])
+  bookings   Booking[]
+
+  @@unique([ownerId, id])
+  @@index([ownerId, name])
+  @@index([ownerId, isArchived])
+  @@map("packagers")
+  @@schema("app")
+}
+
+model Booking {
+  id                  String              @id @default(uuid()) @db.Uuid
+  ownerId             String              @map("owner_id") @db.Uuid
+  packagerId          String              @map("packager_id") @db.Uuid
+  boardingStation     String              @map("boarding_station")
+  destinationStation  String              @map("destination_station")
+  journeyDate         DateTime            @map("journey_date") @db.Date
+  trainIdentifier     String              @map("train_identifier")
+  bookingPersonMobile String?             @map("booking_person_mobile")
+  ticketPricePaise    BigInt              @map("ticket_price_paise")
+  serviceChargePaise  BigInt              @default(0) @map("service_charge_paise")
+  recordedWalletDeductionPaise BigInt      @default(0) @map("recorded_wallet_deduction_paise")
+  notes               String?
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner               AppUser             @relation(fields: [ownerId], references: [id])
+  packager            Packager            @relation(fields: [ownerId, packagerId], references: [ownerId, id])
+  customerEntries     CustomerFundEntry[]
+  deductionEntries    BookingDeductionEntry[]
+  walletEntries       WalletEntry[]
+
+  @@unique([ownerId, id])
+  @@index([ownerId, packagerId, journeyDate])
+  @@index([ownerId, journeyDate])
+  @@map("bookings")
+  @@schema("app")
+}
+
+model CustomerFundEntry {
+  id                 String              @id @default(uuid()) @db.Uuid
+  ownerId            String              @map("owner_id") @db.Uuid
+  bookingId          String              @map("booking_id") @db.Uuid
+  entryType          String              @map("entry_type")
+  amountPaise        BigInt              @map("amount_paise")
+  method             String?
+  occurredAt         DateTime            @map("occurred_at") @db.Timestamptz(6)
+  reversalOfEntryId  String?             @map("reversal_of_entry_id") @db.Uuid
+  operationRequestId String              @map("operation_request_id") @db.Uuid
+  note               String?
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  owner              AppUser             @relation(fields: [ownerId], references: [id])
+  booking            Booking             @relation(fields: [ownerId, bookingId], references: [ownerId, id])
+  operation          OperationRequest    @relation(fields: [ownerId, operationRequestId], references: [ownerId, requestId])
+  reversalOf         CustomerFundEntry?  @relation("CustomerReversal", fields: [ownerId, bookingId, reversalOfEntryId], references: [ownerId, bookingId, id])
+  reversals          CustomerFundEntry[] @relation("CustomerReversal")
+
+  @@unique([ownerId, id])
+  @@unique([ownerId, bookingId, id])
+  @@index([ownerId, bookingId, occurredAt])
+  @@map("customer_fund_entries")
+  @@schema("app")
+}
+
+model BookingDeductionEntry {
+  id                 String           @id @default(uuid()) @db.Uuid
+  ownerId            String           @map("owner_id") @db.Uuid
+  bookingId          String           @map("booking_id") @db.Uuid
+  amountPaise        BigInt           @map("amount_paise")
+  entryType          String           @default("booking_debit") @map("entry_type")
+  occurredAt         DateTime         @map("occurred_at") @db.Timestamptz(6)
+  operationRequestId String           @map("operation_request_id") @db.Uuid
+  note               String?
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  owner              AppUser          @relation(fields: [ownerId], references: [id])
+  booking            Booking          @relation(fields: [ownerId, bookingId], references: [ownerId, id])
+  operation          OperationRequest @relation(fields: [ownerId, operationRequestId], references: [ownerId, requestId])
+
+  @@index([ownerId, bookingId, occurredAt])
+  @@map("booking_deduction_entries")
+  @@schema("app")
+}
+
+model Wallet {
+  id                   String        @id @default(uuid()) @db.Uuid
+  ownerId              String        @map("owner_id") @db.Uuid
+  name                 String
+  openingBalancePaise  BigInt        @map("opening_balance_paise")
+  currentBalancePaise  BigInt        @map("current_balance_paise")
+  isActive             Boolean       @default(true) @map("is_active")
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner                AppUser       @relation(fields: [ownerId], references: [id])
+  entries              WalletEntry[]
+
+  @@unique([ownerId, id])
+  @@index([ownerId, isActive])
+  @@map("wallets")
+  @@schema("app")
+}
+
+model WalletEntry {
+  id                 String          @id @default(uuid()) @db.Uuid
+  ownerId            String          @map("owner_id") @db.Uuid
+  walletId           String          @map("wallet_id") @db.Uuid
+  bookingId          String?         @map("booking_id") @db.Uuid
+  entryType          String          @map("entry_type")
+  amountPaise        BigInt          @map("amount_paise")
+  occurredAt         DateTime        @map("occurred_at") @db.Timestamptz(6)
+  reversalOfEntryId  String?         @map("reversal_of_entry_id") @db.Uuid
+  operationRequestId String          @map("operation_request_id") @db.Uuid
+  note               String?
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  owner              AppUser         @relation(fields: [ownerId], references: [id])
+  wallet             Wallet          @relation(fields: [ownerId, walletId], references: [ownerId, id])
+  booking            Booking?        @relation(fields: [ownerId, bookingId], references: [ownerId, id])
+  operation          OperationRequest @relation(fields: [ownerId, operationRequestId], references: [ownerId, requestId])
+  reversalOf         WalletEntry?    @relation("WalletReversal", fields: [ownerId, walletId, reversalOfEntryId], references: [ownerId, walletId, id])
+  reversals          WalletEntry[]   @relation("WalletReversal")
+
+  @@unique([ownerId, id])
+  @@unique([ownerId, walletId, id])
+  @@index([ownerId, walletId, occurredAt])
+  @@index([ownerId, bookingId])
+  @@map("wallet_entries")
+  @@schema("app")
+}
+
+model OperationRequest {
+  ownerId         String              @map("owner_id") @db.Uuid
+  requestId       String              @map("request_id") @db.Uuid
+  operationType   String              @map("operation_type")
+  payloadHash     String              @map("payload_hash")
+  resultJson      Json?               @map("result_json") @db.JsonB
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt     DateTime?           @map("completed_at") @db.Timestamptz(6)
+  owner           AppUser             @relation(fields: [ownerId], references: [id])
+  customerEntries CustomerFundEntry[]
+  bookingDeductions BookingDeductionEntry[]
+  walletEntries   WalletEntry[]
+
+  @@id([ownerId, requestId])
+  @@map("operation_requests")
+  @@schema("app")
+}
+
+model AuditEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  ownerId     String   @map("owner_id") @db.Uuid
+  actorUserId String   @map("actor_user_id") @db.Uuid
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id") @db.Uuid
+  action      String
+  reason      String?
+  beforeJson  Json?    @map("before_json") @db.JsonB
+  afterJson   Json?    @map("after_json") @db.JsonB
+  occurredAt  DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  owner       AppUser  @relation("AuditOwner", fields: [ownerId], references: [id])
+  actor       AppUser  @relation("AuditActor", fields: [actorUserId], references: [id])
+
+  @@index([ownerId, occurredAt])
+  @@map("audit_events")
+  @@schema("app")
+}

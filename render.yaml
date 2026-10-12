@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: train-fund-manager-api
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_PRIVATE_KEY_FILE
+        value: /etc/secrets/jwt-private.pem
+      - key: JWT_PUBLIC_KEY_FILE
+        value: /etc/secrets/jwt-public.pem
+      - key: JWT_ACTIVE_KID
+        value: development-1
+      - key: JWT_ISSUER
+        value: train-fund-manager-api
+      - key: JWT_AUDIENCE
+        value: train-fund-manager-mobile

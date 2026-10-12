@@ -1,0 +1,58 @@
+name: Application checks
+on:
+  push:
+  pull_request:
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      MIGRATION_DATABASE_URL: postgresql://postgres:ci_password@127.0.0.1:5432/railway_test?schema=app
+      DATABASE_URL: postgresql://postgres:ci_password@127.0.0.1:5432/railway_test?schema=app
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: railway_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d railway_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run db:validate
+      - run: npm run db:generate
+      - run: npm run db:migrate:deploy
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run db:reconcile
+      - run: docker build -t train-fund-manager-api:ci .
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:3000/api/v1
