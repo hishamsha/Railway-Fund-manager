@@ -3,7 +3,6 @@ services:
     name: train-fund-manager-api
     runtime: docker
     plan: free
-    rootDir: backend
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /ready
