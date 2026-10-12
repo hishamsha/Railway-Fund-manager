@@ -41,7 +41,7 @@ Do not undo a posted financial migration by deleting ledger rows. For code rollb
 
 ## 4. Android build
 
-Build an installable, arm64-only APK for testing **after** Render assigns the live HTTPS hostname. From `mobile/`, run `flutter.bat build apk --profile --split-per-abi --dart-define=API_BASE_URL=https://YOUR_RENDER_HOST.onrender.com/api/v1`, then retain only `build/app/outputs/flutter-apk/app-arm64-v8a-profile.apk`. This profile APK uses test signing; the release build below requires a protected signing key. Profile and release builds reject a local HTTP API URL.
+Build an installable, arm64-only APK for testing **after** Render assigns the live HTTPS hostname. From the project root, run `mobile/tool/build-render-apk.ps1 -ApiBaseUrl https://YOUR_RENDER_HOST.onrender.com/api/v1`. The script requires HTTPS, builds only for arm64, and leaves one APK at `mobile/build/app/outputs/flutter-apk/app-arm64-v8a-profile.apk`. This profile APK uses test signing; the release build below requires a protected signing key. Profile and release builds reject a local HTTP API URL.
 
 Set the application ID and version. Provide `TRAIN_FUND_KEYSTORE_PATH`, `TRAIN_FUND_KEY_ALIAS`, `TRAIN_FUND_STORE_PASSWORD`, and `TRAIN_FUND_KEY_PASSWORD` through the build environment. The release Gradle task rejects missing signing credentials. Build with:
 

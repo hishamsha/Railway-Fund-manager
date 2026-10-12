@@ -14,9 +14,8 @@ ENV NODE_ENV=production PORT=3000
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
-# Render mounts secret files for group 1000. Keep the process unprivileged while
-# allowing it to read the database CA and JWT PEM files at runtime.
-RUN usermod -a -G 1000 node
+# The official Node image creates the unprivileged node user in group 1000,
+# which can read Render's runtime secret files.
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
