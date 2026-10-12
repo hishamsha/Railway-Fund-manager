@@ -110,7 +110,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                 title: done ? 'Password updated' : 'Forgot your password?',
                 subtitle: done
                     ? 'Use your new password to sign in.'
-                    : 'Get a one-time code from the computer running the local API.',
+                    : 'Get a one-time recovery code from your API administrator.',
                 icon: Icons.lock_reset_rounded,
                 children: done
                     ? [

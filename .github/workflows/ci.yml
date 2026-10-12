@@ -55,4 +55,4 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
-      - run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:3000/api/v1
+      - run: flutter build apk --debug

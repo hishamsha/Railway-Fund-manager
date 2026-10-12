@@ -21,7 +21,7 @@ npm.cmd run dev
 
 ## Run the Flutter app
 
-Requires Flutter with Android tooling/emulator or a connected device. Start the API in one terminal, then:
+Requires Flutter with Android tooling/emulator or a connected device. The app uses the hosted Render API by default:
 
 ```powershell
 cd mobile
@@ -29,9 +29,9 @@ flutter.bat pub get
 flutter.bat run
 ```
 
-The emulator can reach the local API at `http://10.0.2.2:3000/api/v1`; a physical phone needs a reachable HTTPS API URL. Configure `API_BASE_URL` using `--dart-define` for the chosen environment. A development owner account is now configured. Start the API before signing in on the emulator. Access JWTs stay in app memory; Flutter stores only the rotating refresh token in platform secure storage, never the password. Settings can change the password with the current password. For a forgotten password, run `npm run owner:recovery-code` in `backend` on the API computer and enter the one-time code through **Forgot password?** on login or **Forgot current password?** in Settings. A successful reset signs out all sessions and returns the app to login.
+The default API is `https://train-fund-manager-api.onrender.com/api/v1`, backed by the Supabase database. For local backend development in an Android emulator, explicitly pass `--dart-define=API_BASE_URL=http://10.0.2.2:3000/api/v1`. Access JWTs stay in app memory; Flutter stores only the rotating refresh token in platform secure storage, never the password. Settings can change the password with the current password. For a forgotten password, an administrator can run `npm run owner:recovery-code` in `backend` against the database and provide the one-time code for **Forgot password?** on login or **Forgot current password?** in Settings. A successful reset signs out all sessions and returns the app to login.
 
-The only retained APK is the 64-bit Android profile build at `mobile/build/app/outputs/flutter-apk/app-arm64-v8a-profile.apk` (32.7 MB). It is an optimized development artifact, not a signed production release. Its default API URL (`10.0.2.2`) works only from an Android emulator; a physical phone needs a reachable API URL supplied with `--dart-define=API_BASE_URL=...` when building.
+The only retained APK is the 64-bit Android profile build at `mobile/build/app/outputs/flutter-apk/app-arm64-v8a-profile.apk` (32.7 MB). It is an optimized, test-signed development artifact, not a signed production release. The APK contains the hosted Render API URL and has been verified to exclude the emulator API URL.
 
 ## Run the additional web app
 
