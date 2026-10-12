@@ -1,6 +1,15 @@
 package com.example.train_fund_manager
 
 import android.content.ContentValues
+import android.content.ClipData
+import android.content.Intent
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -9,6 +18,15 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private data class SavedPdf(val uri: Uri, val name: String, val result: MethodChannel.Result)
+
+    private var pendingPdf: SavedPdf? = null
+
+    companion object {
+        private const val PDF_CHANNEL = "downloaded_reports"
+        private const val NOTIFICATION_PERMISSION_REQUEST = 701
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "train_fund_manager/downloads")
@@ -53,7 +71,8 @@ class MainActivity : FlutterActivity() {
                                 if (cursor.moveToFirst()) cursor.getString(0) else name
                             } ?: name
                         }.getOrDefault(name)
-                        runOnUiThread { result.success(savedName) }
+                        val saved = SavedPdf(uri!!, savedName, result)
+                        runOnUiThread { finishDownload(saved) }
                     } catch (error: Exception) {
                         uri?.let { runCatching { contentResolver.delete(it, null, null) } }
                         runOnUiThread { result.error("SAVE_FAILED", error.message, null) }
@@ -61,4 +80,84 @@ class MainActivity : FlutterActivity() {
                 }.start()
             }
     }
+
+    private fun finishDownload(saved: SavedPdf) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED) {
+            pendingPdf = saved
+            requestPermissions(
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                NOTIFICATION_PERMISSION_REQUEST
+            )
+            return
+        }
+        completeDownload(saved)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != NOTIFICATION_PERMISSION_REQUEST) return
+        val saved = pendingPdf ?: return
+        pendingPdf = null
+        completeDownload(saved)
+    }
+
+    private fun completeDownload(saved: SavedPdf) {
+        val notified = postPdfNotification(saved)
+        val opened = runCatching { startActivity(pdfViewIntent(saved.uri, saved.name)) }
+            .isSuccess
+        saved.result.success(
+            mapOf(
+                "filename" to saved.name,
+                "opened" to opened,
+                "notified" to notified
+            )
+        )
+    }
+
+    private fun pdfViewIntent(uri: Uri, name: String): Intent =
+        Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/pdf")
+            clipData = ClipData.newUri(contentResolver, name, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+    private fun postPdfNotification(saved: SavedPdf): Boolean = runCatching {
+        val manager = getSystemService(NotificationManager::class.java)
+        if (!manager.areNotificationsEnabled()) return@runCatching false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    PDF_CHANNEL, "Downloaded reports", NotificationManager.IMPORTANCE_DEFAULT
+                )
+            )
+            if (manager.getNotificationChannel(PDF_CHANNEL)?.importance ==
+                NotificationManager.IMPORTANCE_NONE) return@runCatching false
+        }
+        val viewIntent = pdfViewIntent(saved.uri, saved.name).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val notificationId = saved.uri.toString().hashCode()
+        val openPdf = PendingIntent.getActivity(
+            this,
+            notificationId,
+            viewIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = Notification.Builder(this, PDF_CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("PDF downloaded")
+            .setContentText(saved.name)
+            .setContentIntent(openPdf)
+            .setAutoCancel(true)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .build()
+        manager.notify(notificationId, notification)
+        true
+    }.getOrDefault(false)
 }

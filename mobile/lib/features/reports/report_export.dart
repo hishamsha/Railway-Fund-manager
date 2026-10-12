@@ -194,7 +194,19 @@ Future<Uint8List> packagerPdfBytes(
   return document.save();
 }
 
-Future<String?> downloadPackagerPdf(
+class PdfDownloadResult {
+  const PdfDownloadResult({
+    required this.filename,
+    required this.opened,
+    required this.notified,
+  });
+
+  final String? filename;
+  final bool opened;
+  final bool notified;
+}
+
+Future<PdfDownloadResult> downloadPackagerPdf(
   String packagerName,
   List<Map<String, dynamic>> bookings,
 ) async {
@@ -207,9 +219,19 @@ Future<String?> downloadPackagerPdf(
       : safeName.substring(0, safeName.length > 50 ? 50 : safeName.length);
   final filename = 'packager_${shortName}_all_bookings.pdf';
   try {
-    return await const MethodChannel(
-      'train_fund_manager/downloads',
-    ).invokeMethod<String>('savePdf', {'name': filename, 'bytes': bytes});
+    final saved = await const MethodChannel('train_fund_manager/downloads')
+        .invokeMapMethod<String, dynamic>('savePdf', {
+          'name': filename,
+          'bytes': bytes,
+        });
+    if (saved == null || saved['filename'] is! String) {
+      throw StateError('The PDF save did not return a filename');
+    }
+    return PdfDownloadResult(
+      filename: saved['filename'] as String,
+      opened: saved['opened'] == true,
+      notified: saved['notified'] == true,
+    );
   } on PlatformException catch (error) {
     if (error.code != 'UNSUPPORTED') rethrow;
     await SharePlus.instance.share(
@@ -218,6 +240,10 @@ Future<String?> downloadPackagerPdf(
         fileNameOverrides: [filename],
       ),
     );
-    return null;
+    return const PdfDownloadResult(
+      filename: null,
+      opened: false,
+      notified: false,
+    );
   }
 }

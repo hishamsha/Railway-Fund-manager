@@ -173,12 +173,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       downloadMessage = null;
     });
     try {
-      final filename = await downloadPackagerPdf(name, bookings);
-      if (mounted && filename != null) {
-        setState(
-          () =>
-              downloadMessage = 'Saved to Downloads/TrainFundManager/$filename',
-        );
+      final download = await downloadPackagerPdf(name, bookings);
+      if (mounted && download.filename != null) {
+        setState(() {
+          downloadMessage =
+              'Saved to Downloads/TrainFundManager/${download.filename}. '
+              '${download.opened ? 'PDF opened.' : 'No PDF viewer is available; open it from Downloads.'}'
+              '${download.notified ? ' Tap the notification to reopen it.' : ' Allow notifications for this app to see download alerts.'}';
+        });
       }
     } catch (_) {
       if (mounted) {
