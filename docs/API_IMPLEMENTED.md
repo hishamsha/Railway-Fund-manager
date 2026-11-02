@@ -20,11 +20,11 @@ Refresh tokens are single use. Reuse revokes the session family. Access JWTs exp
 | Method | Path | Body/query | Result |
 |---|---|---|---|
 | GET | `/packagers` | `limit=1..100`, optional `cursor`, `search`, `include_archived=true` | `{ "items": [...], "next_cursor": "uuid-or-null" }` |
-| POST | `/packagers` | `name`, optional `phone`, `notes` | 201 `{ "packager": ... }` |
+| POST | `/packagers` | `name`, optional `phone`, `notes`, `credit_limit_paise` | 201 `{ "packager": ... }` |
 | GET | `/packagers/:id` | — | `{ "packager": ... }` or 404 |
-| PATCH | `/packagers/:id` | Any of `name`, `phone`, `notes`, `is_archived` | `{ "packager": ... }` or 404 |
+| PATCH | `/packagers/:id` | Any of `name`, `phone`, `notes`, `credit_limit_paise`, `is_archived` | `{ "packager": ... }` or 404 |
 
-Packager fields: `id`, `name`, `phone`, `notes`, `is_archived`, `created_at`, `updated_at`. Archiving preserves bookings and history. All list/detail/update queries are owner scoped. No hard-delete endpoint exists.
+Packager fields: `id`, `name`, `phone`, `notes`, `credit_limit_paise` (`null` = no limit), `is_archived`, `created_at`, `updated_at`. Archiving preserves bookings and history. All list/detail/update queries are owner scoped. No hard-delete endpoint exists.
 
 ## Wallet baseline (M05)
 
@@ -48,7 +48,7 @@ Money is JSON integer paise and stored as PostgreSQL bigint. Opening balance liv
 | POST | `/bookings/:id/deductions` | `amount_paise` > 0, ISO `occurred_at`, optional `note`; UUID `Idempotency-Key` | 201 `{ "entry", "financials" }`; identical replay 200 |
 | PATCH | `/bookings/:id` | All editable booking fields and current collection/deduction totals; UUID `Idempotency-Key` | 200 `{ "booking", "financials" }`; stale edit 409 |
 
-Create body: `packager_id`, `boarding_station`, `destination_station`, date-only `journey_date`, one `train_identifier`, optional `booking_person_mobile` (10–15 digits, optional leading `+`), `ticket_price_paise` (>0), `service_charge_paise` (>=0), `initial_collected_paise` (>=0), `wallet_deducted_paise` (>=0), optional `notes`. Blank optional money inputs in Flutter are sent as zero. No source wallet is needed. For compatibility, the API still accepts `wallet_id` for older clients and posts those deductions to the existing wallet ledger. The mobile number is a single booking contact field; no passenger records, PNR, reservation reference or booking status fields are accepted.
+Create body: `packager_id`, `boarding_station`, `destination_station`, date-only `journey_date`, one `train_identifier`, optional `booking_person_mobile` (10–15 digits, optional leading `+`), `ticket_price_paise` (>0), `service_charge_paise` (>=0), `initial_collected_paise` (>=0), `wallet_deducted_paise` (>=0), optional `notes`. Blank optional money inputs in Flutter are sent as zero. No source wallet is needed. For compatibility, the API still accepts `wallet_id` for older clients and posts those deductions to the existing wallet ledger. The mobile number is a single booking contact field; no passenger records are kept. Legs, PNR, ticket status, service charge rules, credit limits and payment due dates are described under Phase 1 admin below.
 
 The server checks owner alignment and claims the idempotency key, then inserts the booking, recorded deduction amount, and optional receipt in one transaction. It locks and debits an app wallet only for legacy requests that supply `wallet_id`. `financials.fund_balance_paise = ticket_price_paise - wallet_deducted_paise`; collections and service charge are excluded. `financials.balance_due_paise = max(ticket + fee - collected, 0)` remains a separate customer due figure. Identical retries return the committed result; different content with the same key returns 409.
 
@@ -99,3 +99,52 @@ Refunds must reference an original receipt or booking debit and cannot exceed it
 | GET | `/reports/wallets` | Required dates; optional `packager_id`, `limit`, `offset`. Uses `occurred_at`; returns wallet credits, debits, net movement and net booking spend. |
 
 When supplied, date ranges are inclusive UTC dates and are limited to 366 days. Collections and wallet reports still require dates. A packager filter on wallet cashflow includes booking-linked movements only. All responses are owner scoped and contain `summary`, `items`, and `next_offset`. The Flutter booking report loads paginated results and saves one all-time PDF per packager to Android Downloads/TrainFundManager (or offers sharing on Android versions before 10). Other API reports remain available to API clients.
+
+## Phase 1 admin: ticket sources, legs, charges, credit and dues
+
+### Booking accounts
+
+Personal IRCTC IDs and agent portals that tickets are bought from. Only a login name is stored; there is no password field.
+
+| Method | Path | Body/query | Result |
+|---|---|---|---|
+| GET | `/booking-accounts` | Optional `include_inactive=true` | `{ "items": [...] }` |
+| POST | `/booking-accounts` | `name`, `kind` (`personal_id` or `agent_portal`), optional `login_id`, `notes` | 201 `{ "booking_account": ... }` |
+| GET | `/booking-accounts/:id` | — | `{ "booking_account": ... }` or 404 |
+| PATCH | `/booking-accounts/:id` | Any of the create fields or `is_active` | `{ "booking_account": ... }` or 404 |
+| GET | `/booking-accounts/:id/usage` | Optional `from_date`, `to_date` (journey dates) | Ticket count, cancelled count, fare total excluding cancelled legs, counts by status |
+
+### Service charge rules
+
+A rule with `packager_id: null` is the default for a ticket type (`direct` or `connected`); a packager rule overrides it.
+
+| Method | Path | Body/query | Result |
+|---|---|---|---|
+| GET | `/service-charge-rules` | Optional `packager_id` (its rules plus defaults) | `{ "items": [...] }` |
+| PUT | `/service-charge-rules` | `packager_id` (uuid or null), `ticket_type`, `charge_paise` | 201 created or 200 updated `{ "rule": ... }`; audited |
+| DELETE | `/service-charge-rules/:id` | — | 204; audited |
+| GET | `/service-charge-rules/quote` | `packager_id`, `ticket_type` | `{ "charge_paise", "source": "packager"|"default"|"none" }` |
+
+### Booking legs
+
+Every booking has one or more legs (`booking.legs`, ordered by `sequence`). Each leg has `boarding_station`, `destination_station`, `journey_date`, `train_identifier`, `fare_paise`, optional `booking_account_id`, optional `pnr` (6–20 letters/digits) and `ticket_status`: `requested`, `booked` (default), `confirmed`, `waitlisted`, `rac`, `cancelled` or `travelled`. Bookings created before Phase 1 were given one leg from their own fields.
+
+- **Create** accepts either the existing top-level route fields (one direct leg, optionally with `booking_account_id`, `pnr`, `ticket_status`) or `legs` (1–20) with the top-level `boarding_station`, `destination_station`, `journey_date`, `train_identifier` and `ticket_price_paise` omitted. With legs, the booking takes the first leg's boarding station, date and train list, the last leg's destination, the sum of fares as ticket price, and `ticket_type: "connected"` when there is more than one leg. Legs must not go back in date order, and a journey ending where it started must be two bookings.
+- **Service charge**: when `service_charge_paise` is omitted, the quote rule above applies. Sending it, including 0, overrides the rule.
+- **Credit limit**: when the packager has `credit_limit_paise`, a booking that would raise its net due (all payable minus net collections, plus this booking's payable minus `initial_collected_paise`) above the limit returns 409 `CREDIT_LIMIT_EXCEEDED`, unless the body has `allow_over_credit_limit: true`. Concurrent bookings for one packager are serialized by a row lock.
+- **Payment due date**: optional `payment_due_date` on create and edit (`null` clears it). The effective due date is `payment_due_date`, else the journey date.
+- **Edit** (`PATCH /bookings/:id`) may send `legs` instead of the top-level route fields to replace all legs. Without `legs`, a single-leg booking's leg follows the edited route and keeps its id, account, PNR and status. A connected booking edited without `legs` must keep its route and price, otherwise 409 `LEGS_REQUIRED`.
+- `PATCH /bookings/:id/legs/:legId` sets any of `ticket_status`, `pnr`, `booking_account_id` (null clears). It does not change money and is audited as `booking_leg`/`track`.
+
+### Tracker and dues
+
+"Today" defaults to the current date in India (Asia/Kolkata); every view accepts an explicit date.
+
+| Method | Path | Query | Result |
+|---|---|---|---|
+| GET | `/tickets` | Optional `status`, `booking_account_id`, `packager_id`, `from_date`, `to_date`, `limit=1..100` (50), `offset` | Legs by journey date with `booking_id`, `packager_name`, `ticket_type`, `booking_person_mobile`; `next_offset` |
+| GET | `/calendar` | `from_date`, `to_date` (at most 63 days) | `{ "days": [{ "date", "total", "by_status" }] }` |
+| GET | `/agenda` | Optional `date` | `today_journeys`, `tomorrow_journeys` (cancelled legs excluded), `payments_due_today` and `overdue_payments` (`total_due_paise`, items with `balance_due_paise` and `due_date`) |
+| GET | `/finance/pending-agencies` | Optional `date`, `include_settled=true` | Per packager `net_due_paise`, `advance_credit_paise`, `overdue_paise`, `oldest_due_date`, `credit_limit_paise`, `available_credit_paise`, `over_limit`; sorted by net due; `totals` |
+
+The runtime role can delete only `booking_legs` (replaced on edit) and `service_charge_rules`; reapply `prisma/runtime_grants.sql` after migrating.

@@ -27,7 +27,7 @@ async function cleanup() {
     await client.query('BEGIN');
     await client.query('ALTER TABLE app.customer_fund_entries DISABLE TRIGGER customer_fund_entries_immutable');
     await client.query('ALTER TABLE app.wallet_entries DISABLE TRIGGER wallet_entries_immutable');
-    for (const table of ['audit_events', 'customer_fund_entries', 'wallet_entries', 'bookings',
+    for (const table of ['audit_events', 'customer_fund_entries', 'wallet_entries', 'booking_legs', 'bookings',
       'packagers', 'wallets', 'operation_requests']) {
       await client.query(`DELETE FROM app.${table} WHERE owner_id = $1`, [owner]);
     }

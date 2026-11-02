@@ -7,6 +7,9 @@ import { bookingRouter } from './bookings/routes.js';
 import { dashboardRouter } from './dashboard/routes.js';
 import { financeRouter } from './finance/routes.js';
 import { reportRouter } from './reports/routes.js';
+import { bookingAccountRouter } from './accounts/routes.js';
+import { serviceChargeRuleRouter } from './charges/routes.js';
+import { trackerRouter } from './tracker/routes.js';
 import { getPrisma } from './database/prisma.js';
 import { errorHandler, notFound } from './middleware/error-handler.js';
 import { requestId } from './middleware/request-id.js';
@@ -36,6 +39,10 @@ app.use('/api/v1/bookings', bookingRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1', financeRouter);
 app.use('/api/v1/reports', reportRouter);
+app.use('/api/v1/booking-accounts', bookingAccountRouter);
+app.use('/api/v1/service-charge-rules', serviceChargeRuleRouter);
+// /tickets, /calendar, /agenda and /finance/pending-agencies
+app.use('/api/v1', trackerRouter);
 
 app.use(notFound);
 app.use(errorHandler);

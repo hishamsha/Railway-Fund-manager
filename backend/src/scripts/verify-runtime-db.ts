@@ -8,7 +8,9 @@ const pool = new Pool({ connectionString, max: 1, connectionTimeoutMillis: 5000 
 const tables = [
   'app_users', 'auth_sessions', 'refresh_tokens', 'packagers', 'bookings',
   'customer_fund_entries', 'wallets', 'wallet_entries', 'operation_requests', 'audit_events',
+  'booking_accounts', 'booking_legs', 'service_charge_rules',
 ];
+const deletable = ['booking_legs', 'service_charge_rules'];
 
 try {
   const identity = await pool.query<{ role: string; schema_usage: boolean; schema_create: boolean }>(
@@ -36,7 +38,8 @@ try {
       [target],
     );
     const privileges = result.rows[0];
-    if (!privileges?.exists || !privileges.can_select || privileges.can_delete) {
+    if (!privileges?.exists || !privileges.can_select ||
+      (privileges.can_delete && !deletable.includes(table))) {
       throw new Error(`Runtime privileges are incorrect for ${target}`);
     }
     if (['customer_fund_entries', 'wallet_entries', 'audit_events'].includes(table) && privileges.can_update) {
