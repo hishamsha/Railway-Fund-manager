@@ -1,5 +1,13 @@
 # Documentation review and implementation status
 
+## Phase 1 admin API, 2 November 2026
+
+Backend only; the Flutter app is not updated yet. Migration `20261102_phase1_admin` adds booking accounts (personal IRCTC IDs and agent portals, login name only), per-leg fares with PNR and ticket status for direct and connected tickets, service charge rules by packager and ticket type, packager credit limits and optional payment due dates. Existing bookings are backfilled with one leg each. New routes cover booking accounts and their usage, charge rules and quotes, leg tracking, the ticket tracker, a journey calendar, today/tomorrow agenda with payments due and overdue, and packagers with pending payments. Booking creation applies the charge rule when no fee is sent and blocks bookings past a credit limit unless overridden. Existing Flutter requests keep working because single-leg bookings still use the old top-level fields. See [`API_IMPLEMENTED.md`](API_IMPLEMENTED.md).
+
+Verified on a disposable local PostgreSQL 17: all eleven migrations apply from scratch; `prisma migrate diff` shows no drift from this change except the intentional `NULLS NOT DISTINCT` unique index on charge rules; the runtime role check passes for 13 tables after `runtime_grants.sql`; all 21 backend tests (including the new `phase1-admin` integration test) pass with the API connected as `app_runtime`; `db:reconcile` reports zero mismatches. The migration has **not** been applied to the Supabase development database. Run `npm run db:migrate:deploy` from `backend/` and then reapply `prisma/runtime_grants.sql` as the admin role.
+
+Found while verifying, not changed here: a fresh database needs an `app_runtime` role before migration `20261011_zzzzz_booking_deduction_entries` runs, and the CI workflow does not create one, so CI's migrate step will fail on a clean Postgres. The password-recovery integration test fails when the database session time zone is not UTC.
+
 ## Packager PDF reports, 12 October 2026
 
 Flutter Analytics report generation now has only a packager filter and Search action. It loads all matching bookings regardless of date, groups results by packager, displays each booking's journey and financial details separately, and generates one all-time PDF per packager. Android 10+ saves the PDF directly to Downloads/TrainFundManager; earlier Android versions offer sharing. CSV/XLSX and date controls were removed. The API booking report now accepts omitted dates for all-time results and includes packager name, notes, collections, wallet deductions, customer due, advance credit and fund balance; integration and PDF generation tests pass.

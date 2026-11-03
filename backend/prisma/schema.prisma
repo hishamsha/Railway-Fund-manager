@@ -27,6 +27,9 @@ model AppUser {
   bookingDeductions  BookingDeductionEntry[]
   walletEntries      WalletEntry[]
   operations         OperationRequest[]
+  bookingAccounts    BookingAccount[]
+  serviceChargeRules ServiceChargeRule[]
+  bookingLegs        BookingLeg[]
   ownedAuditEvents   AuditEvent[] @relation("AuditOwner")
   actorAuditEvents   AuditEvent[] @relation("AuditActor")
 
@@ -76,11 +79,13 @@ model Packager {
   name       String
   phone      String?
   notes      String?
+  creditLimitPaise BigInt? @map("credit_limit_paise")
   isArchived Boolean   @default(false) @map("is_archived")
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   owner      AppUser   @relation(fields: [ownerId], references: [id])
   bookings   Booking[]
+  serviceChargeRules ServiceChargeRule[]
 
   @@unique([ownerId, id])
   @@index([ownerId, name])
@@ -101,6 +106,8 @@ model Booking {
   ticketPricePaise    BigInt              @map("ticket_price_paise")
   serviceChargePaise  BigInt              @default(0) @map("service_charge_paise")
   recordedWalletDeductionPaise BigInt      @default(0) @map("recorded_wallet_deduction_paise")
+  ticketType          String              @default("direct") @map("ticket_type")
+  paymentDueDate      DateTime?           @map("payment_due_date") @db.Date
   notes               String?
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -109,11 +116,80 @@ model Booking {
   customerEntries     CustomerFundEntry[]
   deductionEntries    BookingDeductionEntry[]
   walletEntries       WalletEntry[]
+  legs                BookingLeg[]
 
   @@unique([ownerId, id])
   @@index([ownerId, packagerId, journeyDate])
   @@index([ownerId, journeyDate])
   @@map("bookings")
+  @@schema("app")
+}
+
+// One train segment of a booking. A direct booking has one leg; a connected
+// booking has several, each with its own fare, source account and status.
+model BookingLeg {
+  id                 String          @id @default(uuid()) @db.Uuid
+  ownerId            String          @map("owner_id") @db.Uuid
+  bookingId          String          @map("booking_id") @db.Uuid
+  sequence           Int
+  boardingStation    String          @map("boarding_station")
+  destinationStation String          @map("destination_station")
+  journeyDate        DateTime        @map("journey_date") @db.Date
+  trainIdentifier    String          @map("train_identifier")
+  farePaise          BigInt          @map("fare_paise")
+  bookingAccountId   String?         @map("booking_account_id") @db.Uuid
+  pnr                String?
+  ticketStatus       String          @default("booked") @map("ticket_status")
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner              AppUser         @relation(fields: [ownerId], references: [id])
+  booking            Booking         @relation(fields: [ownerId, bookingId], references: [ownerId, id])
+  bookingAccount     BookingAccount? @relation(fields: [bookingAccountId], references: [id], onDelete: Restrict)
+
+  @@unique([bookingId, sequence])
+  @@index([ownerId, journeyDate])
+  @@index([ownerId, bookingAccountId])
+  @@index([ownerId, ticketStatus])
+  @@map("booking_legs")
+  @@schema("app")
+}
+
+// A personal IRCTC ID or agent portal that tickets are bought from. Only a
+// login name is kept; passwords never enter this system.
+model BookingAccount {
+  id        String       @id @default(uuid()) @db.Uuid
+  ownerId   String       @map("owner_id") @db.Uuid
+  name      String
+  kind      String
+  loginId   String?      @map("login_id")
+  notes     String?
+  isActive  Boolean      @default(true) @map("is_active")
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner     AppUser      @relation(fields: [ownerId], references: [id])
+  legs      BookingLeg[]
+
+  @@index([ownerId, isActive])
+  @@map("booking_accounts")
+  @@schema("app")
+}
+
+// Default service charge per ticket type, optionally overridden per packager.
+// The migration adds a NULLS NOT DISTINCT unique index on
+// (owner_id, packager_id, ticket_type) so there is one default per type.
+model ServiceChargeRule {
+  id          String    @id @default(uuid()) @db.Uuid
+  ownerId     String    @map("owner_id") @db.Uuid
+  packagerId  String?   @map("packager_id") @db.Uuid
+  ticketType  String    @map("ticket_type")
+  chargePaise BigInt    @map("charge_paise")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner       AppUser   @relation(fields: [ownerId], references: [id])
+  packager    Packager? @relation(fields: [packagerId], references: [id], onDelete: Restrict)
+
+  @@index([ownerId, packagerId])
+  @@map("service_charge_rules")
   @@schema("app")
 }
 

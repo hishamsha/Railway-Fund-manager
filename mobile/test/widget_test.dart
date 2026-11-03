@@ -24,6 +24,6 @@ void main() {
     expect(find.text('Password'), findsOneWidget);
     expect(find.text('Log In'), findsOneWidget);
     expect(find.text('Forgot password?'), findsOneWidget);
-    expect(find.text('Sign up'), findsOneWidget);
+    expect(find.text('Sign up'), findsNothing);
   });
 }

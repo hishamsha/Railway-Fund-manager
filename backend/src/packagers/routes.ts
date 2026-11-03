@@ -10,6 +10,8 @@ const createBody = z.strictObject({
   name: z.string().trim().min(1).max(120),
   phone: z.string().trim().max(30).nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
+  // null means no limit; bookings past the limit need an explicit override.
+  credit_limit_paise: z.number().int().safe().min(0).max(1_000_000_000_000).nullable().optional(),
 });
 const updateBody = createBody.partial().extend({ is_archived: z.boolean().optional() }).refine(
   (body) => Object.keys(body).length > 0,
@@ -39,10 +41,11 @@ function safeMoney(value: bigint): number {
 }
 function serialize(packager: {
   id: string; name: string; phone: string | null; notes: string | null;
-  isArchived: boolean; createdAt: Date; updatedAt: Date;
+  creditLimitPaise: bigint | null; isArchived: boolean; createdAt: Date; updatedAt: Date;
 }) {
   return { id: packager.id, name: packager.name, phone: packager.phone,
     notes: packager.notes, is_archived: packager.isArchived,
+    credit_limit_paise: packager.creditLimitPaise === null ? null : safeMoney(packager.creditLimitPaise),
     created_at: packager.createdAt.toISOString(), updated_at: packager.updatedAt.toISOString() };
 }
 
@@ -74,6 +77,7 @@ router.post('/', async (request, response, next) => {
     const body = createBody.parse(request.body);
     const packager = await getPrisma().packager.create({ data: {
       ownerId: ownerId(response), name: body.name, phone: body.phone ?? null, notes: body.notes ?? null,
+      creditLimitPaise: body.credit_limit_paise == null ? null : BigInt(body.credit_limit_paise),
     } });
     response.status(201).json({ packager: serialize(packager) });
   } catch (error) { next(error); }
@@ -174,6 +178,8 @@ router.patch('/:id', async (request, response, next) => {
       data: { ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.phone !== undefined ? { phone: body.phone } : {}),
         ...(body.notes !== undefined ? { notes: body.notes } : {}),
+        ...(body.credit_limit_paise !== undefined ? { creditLimitPaise:
+          body.credit_limit_paise === null ? null : BigInt(body.credit_limit_paise) } : {}),
         ...(body.is_archived !== undefined ? { isArchived: body.is_archived } : {}) },
     });
     if (!result.count) { notFound(response); return; }

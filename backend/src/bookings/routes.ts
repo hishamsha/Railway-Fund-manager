@@ -4,7 +4,10 @@ import { z } from 'zod';
 import { authenticate } from '../auth/routes.js';
 import { getPrisma } from '../database/prisma.js';
 import { ApiError } from '../middleware/api-error.js';
+import { creditCheck, dateOnly } from '../admin/rules.js';
 import { bookingFinancials } from './financials.js';
+import { legJson, legRows, legsBody, packagerNetDue, pnr, quoteServiceCharge, requireAccounts,
+  routeFromLegs, rupees, ticketStatus, type LegBody } from './legs.js';
 
 const router = Router();
 router.use(authenticate);
@@ -12,27 +15,63 @@ const uuid = z.uuid();
 const paise = z.number().int().safe().min(0).max(1_000_000_000_000);
 const station = z.string().trim().min(1).max(160);
 const bookingPersonMobile = z.string().trim().regex(/^\+?[1-9][0-9]{9,14}$/, 'Enter 10–15 digits, optionally starting with +').nullable().optional();
+// A booking is described either by top-level route fields (one direct leg) or
+// by `legs`, from which the route, first journey date and price are derived.
+const routeFields = ['boarding_station', 'destination_station', 'journey_date',
+  'train_identifier', 'ticket_price_paise'] as const;
+function refineRoute(body: { legs?: unknown; boarding_station?: string; destination_station?: string;
+  journey_date?: string; train_identifier?: string; ticket_price_paise?: number }, ctx: z.RefinementCtx) {
+  for (const field of routeFields) {
+    if (body.legs && body[field] !== undefined) {
+      ctx.addIssue({ code: 'custom', path: [field], message: 'Omit route fields when legs are given' });
+    } else if (!body.legs && body[field] === undefined) {
+      ctx.addIssue({ code: 'custom', path: [field], message: 'Required' });
+    }
+  }
+  if (!body.legs && body.boarding_station && body.destination_station &&
+    body.boarding_station.toLowerCase() === body.destination_station.toLowerCase()) {
+    ctx.addIssue({ code: 'custom', path: ['destination_station'], message: 'Destination must differ from boarding' });
+  }
+}
 const createBody = z.strictObject({
   packager_id: uuid,
-  boarding_station: station,
-  destination_station: station,
-  journey_date: z.iso.date(),
-  train_identifier: z.string().trim().min(1).max(160),
+  boarding_station: station.optional(),
+  destination_station: station.optional(),
+  journey_date: z.iso.date().optional(),
+  train_identifier: z.string().trim().min(1).max(160).optional(),
+  ticket_price_paise: paise.positive().optional(),
+  legs: legsBody.optional(),
+  // Ticket source fields for a single-leg booking given without `legs`.
+  booking_account_id: uuid.nullable().optional(),
+  pnr: pnr.nullable().optional(),
+  ticket_status: ticketStatus.optional(),
   booking_person_mobile: bookingPersonMobile,
-  ticket_price_paise: paise.positive(),
-  service_charge_paise: paise.default(0),
+  // Omitted means the packager's service charge rule for the ticket type.
+  service_charge_paise: paise.optional(),
   initial_collected_paise: paise.default(0),
   wallet_deducted_paise: paise.default(0),
   wallet_id: uuid.nullable().optional(),
+  payment_due_date: z.iso.date().nullable().optional(),
+  allow_over_credit_limit: z.boolean().default(false),
   notes: z.string().trim().max(2000).nullable().optional(),
 }).superRefine((body, ctx) => {
-  if (body.boarding_station.toLowerCase() === body.destination_station.toLowerCase()) {
-    ctx.addIssue({ code: 'custom', path: ['destination_station'], message: 'Destination must differ from boarding' });
+  refineRoute(body, ctx);
+  if (body.legs) {
+    for (const field of ['booking_account_id', 'pnr', 'ticket_status'] as const) {
+      if (body[field] !== undefined) {
+        ctx.addIssue({ code: 'custom', path: [field], message: 'Set this on each leg instead' });
+      }
+    }
   }
   if (body.wallet_deducted_paise === 0 && body.wallet_id) {
     ctx.addIssue({ code: 'custom', path: ['wallet_id'], message: 'Wallet is only used for a deduction' });
   }
 });
+const legUpdateBody = z.strictObject({
+  ticket_status: ticketStatus.optional(),
+  pnr: pnr.nullable().optional(),
+  booking_account_id: uuid.nullable().optional(),
+}).refine((body) => Object.keys(body).length > 0, 'At least one field is required');
 const listQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: uuid.optional(), packager_id: uuid.optional() });
 const collectionBody = z.strictObject({
@@ -48,12 +87,16 @@ const deductionBody = z.strictObject({
 });
 const editBody = z.strictObject({
   packager_id: uuid,
-  boarding_station: station,
-  destination_station: station,
-  journey_date: z.iso.date(),
-  train_identifier: z.string().trim().min(1).max(160),
+  boarding_station: station.optional(),
+  destination_station: station.optional(),
+  journey_date: z.iso.date().optional(),
+  train_identifier: z.string().trim().min(1).max(160).optional(),
+  ticket_price_paise: paise.positive().optional(),
+  // Replaces every leg. Without it, a single-leg booking's leg follows the
+  // top-level route; a connected booking's route can only change via legs.
+  legs: legsBody.optional(),
   booking_person_mobile: bookingPersonMobile,
-  ticket_price_paise: paise.positive(),
+  payment_due_date: z.iso.date().nullable().optional(),
   service_charge_paise: paise,
   collected_paise: paise,
   wallet_deducted_paise: paise,
@@ -63,9 +106,7 @@ const editBody = z.strictObject({
   expected_wallet_deducted_paise: paise,
   correction_reason: z.string().trim().max(2000).nullable(),
 }).superRefine((body, ctx) => {
-  if (body.boarding_station.toLowerCase() === body.destination_station.toLowerCase()) {
-    ctx.addIssue({ code: 'custom', path: ['destination_station'], message: 'Destination must differ from boarding' });
-  }
+  refineRoute(body, ctx);
   if ((body.collected_paise !== body.expected_collected_paise ||
     body.wallet_deducted_paise !== body.expected_wallet_deducted_paise) &&
     !body.correction_reason) {
@@ -81,14 +122,28 @@ function operationId(header: string | undefined): string {
   return parsed.data;
 }
 function hash(value: object): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
+const withLegs = { legs: { orderBy: { sequence: 'asc' } } } as const;
 function bookingJson(booking: { id: string; packagerId: string; boardingStation: string;
   destinationStation: string; journeyDate: Date; trainIdentifier: string; bookingPersonMobile: string | null; notes: string | null;
-  createdAt: Date; updatedAt: Date }) {
+  ticketType: string; paymentDueDate: Date | null; createdAt: Date; updatedAt: Date;
+  legs: Parameters<typeof legJson>[0][] }) {
   return { id: booking.id, packager_id: booking.packagerId,
     boarding_station: booking.boardingStation, destination_station: booking.destinationStation,
     journey_date: booking.journeyDate.toISOString().slice(0, 10),
     train_identifier: booking.trainIdentifier, booking_person_mobile: booking.bookingPersonMobile, notes: booking.notes,
+    ticket_type: booking.ticketType,
+    payment_due_date: booking.paymentDueDate?.toISOString().slice(0, 10) ?? null,
+    legs: booking.legs.map(legJson),
     created_at: booking.createdAt.toISOString(), updated_at: booking.updatedAt.toISOString() };
+}
+/** Legs from the request, or one leg built from the top-level route fields. */
+function requestedLegs(body: { legs?: LegBody[]; boarding_station?: string; destination_station?: string;
+  journey_date?: string; train_identifier?: string; ticket_price_paise?: number;
+  booking_account_id?: string | null; pnr?: string | null; ticket_status?: LegBody['ticket_status'] }): LegBody[] {
+  return body.legs ?? [{ boarding_station: body.boarding_station!, destination_station: body.destination_station!,
+    journey_date: body.journey_date!, train_identifier: body.train_identifier!,
+    fare_paise: body.ticket_price_paise!, booking_account_id: body.booking_account_id,
+    pnr: body.pnr, ticket_status: body.ticket_status }];
 }
 
 router.get('/', async (request, response, next) => {
@@ -100,7 +155,7 @@ router.get('/', async (request, response, next) => {
     })) throw new ApiError(404, 'NOT_FOUND', 'Resource not found');
     const bookings = await getPrisma().booking.findMany({
       where: { ownerId: owner, ...(query.packager_id ? { packagerId: query.packager_id } : {}) },
-      orderBy: { id: 'asc' }, take: query.limit + 1,
+      orderBy: { id: 'asc' }, take: query.limit + 1, include: withLegs,
       ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
     });
     const page = bookings.slice(0, query.limit);
@@ -128,10 +183,30 @@ router.post('/', async (request, response, next) => {
         }
         return { status: 200, body: previous.resultJson };
       }
-      const packager = await tx.packager.findFirst({ where: {
-        id: body.packager_id, ownerId: owner, isArchived: false,
-      }, select: { id: true } });
+      // Locking the packager serializes concurrent bookings for its credit check.
+      const packagers = await tx.$queryRaw<Array<{ name: string; credit_limit_paise: bigint | null }>>`
+        SELECT name, credit_limit_paise FROM app.packagers
+        WHERE id = ${body.packager_id}::uuid AND owner_id = ${owner}::uuid AND NOT is_archived
+        FOR UPDATE`;
+      const packager = packagers[0];
       if (!packager) throw new ApiError(404, 'NOT_FOUND', 'Packager not found');
+      const legs = requestedLegs(body);
+      const route = routeFromLegs(legs);
+      await requireAccounts(tx, owner, legs.map((leg) => leg.booking_account_id));
+      const serviceCharge = body.service_charge_paise === undefined
+        ? await quoteServiceCharge(tx, owner, body.packager_id, route.ticket_type)
+        : BigInt(body.service_charge_paise);
+      const payable = BigInt(route.ticket_price_paise) + serviceCharge;
+      if (packager.credit_limit_paise !== null && !body.allow_over_credit_limit) {
+        const limit = BigInt(packager.credit_limit_paise);
+        const credit = creditCheck(limit, await packagerNetDue(tx, owner, body.packager_id),
+          payable, BigInt(body.initial_collected_paise));
+        if (!credit.allowed) {
+          throw new ApiError(409, 'CREDIT_LIMIT_EXCEEDED',
+            `This booking would raise ${packager.name}'s due to ${rupees(credit.projected_due_paise)}, ` +
+            `above the ${rupees(limit)} credit limit`);
+        }
+      }
 
       if (body.wallet_deducted_paise > 0 && body.wallet_id) {
         const locked = await tx.$queryRaw<Array<{ current_balance_paise: bigint; is_active: boolean }>>`
@@ -144,17 +219,21 @@ router.post('/', async (request, response, next) => {
         }
       }
 
-      const booking = await tx.booking.create({ data: {
+      const created = await tx.booking.create({ data: {
         ownerId: owner, packagerId: body.packager_id,
-        boardingStation: body.boarding_station, destinationStation: body.destination_station,
-        journeyDate: new Date(`${body.journey_date}T00:00:00.000Z`),
-        trainIdentifier: body.train_identifier,
+        boardingStation: route.boarding_station, destinationStation: route.destination_station,
+        journeyDate: dateOnly(route.journey_date),
+        trainIdentifier: route.train_identifier,
         bookingPersonMobile: body.booking_person_mobile ?? null,
-        ticketPricePaise: BigInt(body.ticket_price_paise),
-        serviceChargePaise: BigInt(body.service_charge_paise),
+        ticketPricePaise: BigInt(route.ticket_price_paise),
+        serviceChargePaise: serviceCharge,
         recordedWalletDeductionPaise: body.wallet_id ? 0n : BigInt(body.wallet_deducted_paise),
+        ticketType: route.ticket_type,
+        paymentDueDate: body.payment_due_date ? dateOnly(body.payment_due_date) : null,
         notes: body.notes ?? null,
       } });
+      await tx.bookingLeg.createMany({ data: legRows(owner, created.id, legs) });
+      const booking = await tx.booking.findUniqueOrThrow({ where: { id: created.id }, include: withLegs });
       const occurredAt = new Date();
       if (body.initial_collected_paise > 0) {
         await tx.customerFundEntry.create({ data: { ownerId: owner, bookingId: booking.id,
@@ -169,15 +248,14 @@ router.post('/', async (request, response, next) => {
         await tx.wallet.update({ where: { id: body.wallet_id! },
           data: { currentBalancePaise: { decrement: BigInt(body.wallet_deducted_paise) } } });
       }
-      const payable = body.ticket_price_paise + body.service_charge_paise;
-      const signed = payable - body.initial_collected_paise;
+      const signed = Number(payable) - body.initial_collected_paise;
       const resultJson = { booking: bookingJson(booking), financials: {
-        ticket_price_paise: body.ticket_price_paise,
-        service_charge_paise: body.service_charge_paise,
-        total_payable_paise: payable,
+        ticket_price_paise: route.ticket_price_paise,
+        service_charge_paise: Number(serviceCharge),
+        total_payable_paise: Number(payable),
         collected_paise: body.initial_collected_paise,
         wallet_deducted_paise: body.wallet_deducted_paise,
-        fund_balance_paise: body.ticket_price_paise - body.wallet_deducted_paise,
+        fund_balance_paise: route.ticket_price_paise - body.wallet_deducted_paise,
         signed_balance_paise: signed,
         balance_due_paise: Math.max(signed, 0),
         advance_credit_paise: Math.max(-signed, 0),
@@ -218,7 +296,7 @@ router.patch('/:id', async (request, response, next) => {
         SELECT id FROM app.bookings WHERE id = ${bookingId}::uuid
         AND owner_id = ${owner}::uuid FOR UPDATE`;
       if (!locked.length) throw new ApiError(404, 'NOT_FOUND', 'Resource not found');
-      const before = await tx.booking.findFirstOrThrow({ where: { id: bookingId, ownerId: owner } });
+      const before = await tx.booking.findFirstOrThrow({ where: { id: bookingId, ownerId: owner }, include: withLegs });
       const previousMoney = await bookingFinancials(before, tx);
       if (before.updatedAt.toISOString() !== body.expected_updated_at ||
         previousMoney.collected_paise !== body.expected_collected_paise ||
@@ -235,18 +313,58 @@ router.patch('/:id', async (request, response, next) => {
       if (changedMoney && !body.correction_reason) {
         throw new ApiError(422, 'CORRECTION_REASON_REQUIRED', 'Explain the money correction');
       }
-      const booking = await tx.booking.update({ where: { id: bookingId }, data: {
+      let legs: LegBody[] | null = body.legs ?? null;
+      if (!legs && before.legs.length > 1) {
+        const beforeRoute = bookingJson(before);
+        if (body.boarding_station !== beforeRoute.boarding_station ||
+          body.destination_station !== beforeRoute.destination_station ||
+          body.journey_date !== beforeRoute.journey_date ||
+          body.train_identifier !== beforeRoute.train_identifier ||
+          BigInt(body.ticket_price_paise!) !== before.ticketPricePaise) {
+          throw new ApiError(409, 'LEGS_REQUIRED', 'Edit the legs to change a connected booking’s route or price');
+        }
+      } else if (!legs) {
+        // Keep the single leg's ticket source and status while its route follows the booking.
+        const current = before.legs[0];
+        legs = [{ ...requestedLegs(body)[0]!, booking_account_id: current?.bookingAccountId ?? null,
+          pnr: current?.pnr ?? null, ticket_status: current?.ticketStatus as LegBody['ticket_status'] }];
+      }
+      const route = legs ? routeFromLegs(legs) : { boarding_station: body.boarding_station!,
+        destination_station: body.destination_station!, journey_date: body.journey_date!,
+        train_identifier: body.train_identifier!, ticket_price_paise: body.ticket_price_paise!,
+        ticket_type: 'connected' as const };
+      if (legs) {
+        const existing = new Set(before.legs.map((leg) => leg.bookingAccountId));
+        await requireAccounts(tx, owner, legs.map((leg) => leg.booking_account_id)
+          .filter((id) => !existing.has(id ?? null)));
+      }
+      await tx.booking.update({ where: { id: bookingId }, data: {
         packagerId: body.packager_id,
-        boardingStation: body.boarding_station,
-        destinationStation: body.destination_station,
-        journeyDate: new Date(`${body.journey_date}T00:00:00.000Z`),
-        trainIdentifier: body.train_identifier,
+        boardingStation: route.boarding_station,
+        destinationStation: route.destination_station,
+        journeyDate: dateOnly(route.journey_date),
+        trainIdentifier: route.train_identifier,
         bookingPersonMobile: body.booking_person_mobile === undefined
           ? before.bookingPersonMobile : body.booking_person_mobile,
-        ticketPricePaise: BigInt(body.ticket_price_paise),
+        ticketPricePaise: BigInt(route.ticket_price_paise),
         serviceChargePaise: BigInt(body.service_charge_paise),
+        ticketType: route.ticket_type,
+        ...(body.payment_due_date !== undefined ? { paymentDueDate:
+          body.payment_due_date === null ? null : dateOnly(body.payment_due_date) } : {}),
         notes: body.notes,
       } });
+      const singleLeg = !body.legs && before.legs.length === 1 ? before.legs[0] : undefined;
+      if (singleLeg) {
+        // Update in place so the leg keeps its id for ticket tracking.
+        const [row] = legRows(owner, bookingId, legs!);
+        await tx.bookingLeg.update({ where: { id: singleLeg.id }, data: {
+          boardingStation: row!.boardingStation, destinationStation: row!.destinationStation,
+          journeyDate: row!.journeyDate, trainIdentifier: row!.trainIdentifier, farePaise: row!.farePaise } });
+      } else if (legs) {
+        await tx.bookingLeg.deleteMany({ where: { ownerId: owner, bookingId } });
+        await tx.bookingLeg.createMany({ data: legRows(owner, bookingId, legs) });
+      }
+      const booking = await tx.booking.findUniqueOrThrow({ where: { id: bookingId }, include: withLegs });
       const occurredAt = new Date();
       const collectionDelta = body.collected_paise - previousMoney.collected_paise;
       if (collectionDelta !== 0) {
@@ -441,9 +559,37 @@ router.get('/:id', async (request, response, next) => {
     const id = uuid.parse(request.params.id);
     const booking = await getPrisma().booking.findFirst({ where: {
       id, ownerId: response.locals.auth.userId,
-    } });
+    }, include: withLegs });
     if (!booking) throw new ApiError(404, 'NOT_FOUND', 'Resource not found');
     response.json({ booking: bookingJson(booking), financials: await bookingFinancials(booking) });
+  } catch (error) { next(error); }
+});
+
+// Ticket tracking for one leg: status, PNR and the account it was bought from.
+// Fares change through the booking edit so money corrections stay audited there.
+router.patch('/:id/legs/:legId', async (request, response, next) => {
+  try {
+    const bookingId = uuid.parse(request.params.id);
+    const legId = uuid.parse(request.params.legId);
+    const body = legUpdateBody.parse(request.body);
+    const owner = response.locals.auth.userId as string;
+    const leg = await getPrisma().$transaction(async (tx) => {
+      const before = await tx.bookingLeg.findFirst({ where: { id: legId, bookingId, ownerId: owner } });
+      if (!before) throw new ApiError(404, 'NOT_FOUND', 'Resource not found');
+      if (body.booking_account_id && body.booking_account_id !== before.bookingAccountId) {
+        await requireAccounts(tx, owner, [body.booking_account_id]);
+      }
+      const after = await tx.bookingLeg.update({ where: { id: legId }, data: {
+        ...(body.ticket_status !== undefined ? { ticketStatus: body.ticket_status } : {}),
+        ...(body.pnr !== undefined ? { pnr: body.pnr } : {}),
+        ...(body.booking_account_id !== undefined ? { bookingAccountId: body.booking_account_id } : {}),
+      } });
+      await tx.auditEvent.create({ data: { ownerId: owner, actorUserId: owner,
+        entityType: 'booking_leg', entityId: legId, action: 'track',
+        beforeJson: legJson(before), afterJson: legJson(after) } });
+      return after;
+    });
+    response.json({ leg: legJson(leg) });
   } catch (error) { next(error); }
 });
 
