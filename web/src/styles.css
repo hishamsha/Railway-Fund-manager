@@ -157,3 +157,7 @@ td select, td input { min-width: 120px; }
 .correction h3 { margin: 0 0 4px; font-size: 15px; }
 .nowrap-row { flex-wrap: nowrap; }
 .charge { margin-top: 6px; display: block; }
+.link-button { background: none; border: 0; color: var(--primary); font-weight: 500; width: 100%; margin-top: 8px; }
+.link-button:hover { text-decoration: underline; }
+.frame-heading { padding: 0 8px; font-size: 13px; font-weight: 600; color: var(--muted-foreground); }
+.narrow-form { max-width: 420px; }

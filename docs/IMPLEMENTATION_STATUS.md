@@ -1,5 +1,11 @@
 # Documentation review and implementation status
 
+## Agency portal screens, 5 November 2026
+
+`web/` now shows agencies their own portal after sign-in: home summary, journey calendar, bookings, payments, journey requests with quote accept and cancel, and password change. The sign-in page gained password setup with a one-time code, for new agency logins and for recovery. The owner's screens gained password change too. There are no backend changes; the API enforces roles and agency limits on every route, and the web client only chooses which screens to show.
+
+Checked in a browser against local sample data: setting a first password with a setup code, mismatched passwords, sign-in as an agency, totals, calendar, bookings and payments for that agency only, sending a request, a quote changing before acceptance, accepting, a wrong current password, admin addresses redirecting home, no owner API calls from the agency screens, the owner's screens still working, and no sideways overflow at phone width. Not checked: the message shown when an agency is archived, and a successful password change. Quotes and statuses update when the page is reloaded or an action runs, not live.
+
 ## Cancelled tickets and charges, 5 November 2026
 
 Migration `20261104_phase3_cancellation` adds a cancellation charge per leg, allows a ticket price of 0, and recalculates bookings that already have cancelled legs. A booking's `ticket_price_paise` is now active fares plus cancellation charges, so all existing reports follow it without query changes. The service charge is not reduced automatically, and restoring a ticket has no credit limit check. The Flutter app has not been updated or run against this: it does not show charges, and its form may not accept a booking priced at 0.

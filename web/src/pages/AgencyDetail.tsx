@@ -16,7 +16,7 @@ function SetupCodeNotice({ setup }: { setup: SetupCode }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="notice good" role="status">
-      <p><strong>Setup code for {setup.email}</strong>. Send it to the agency now, because it won't be shown again. It works once, until {new Date(setup.expires).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}. The agency uses it to set a password.</p>
+      <p><strong>Setup code for {setup.email}</strong>. Send it to the agency now, because it won't be shown again. It works once, until {new Date(setup.expires).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}. On the sign-in page, the agency chooses "First time here" and uses this code to set a password.</p>
       <div className="row">
         <code>{setup.code}</code>
         <button type="button" className="ghost" onClick={() => void navigator.clipboard.writeText(setup.code).then(() => setCopied(true))}>
