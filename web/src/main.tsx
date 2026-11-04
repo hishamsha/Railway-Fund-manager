@@ -12,6 +12,7 @@ import { Tickets } from './pages/Tickets';
 import { Bookings } from './pages/Bookings';
 import { NewBooking } from './pages/NewBooking';
 import { BookingDetail } from './pages/BookingDetail';
+import { EditBooking } from './pages/EditBooking';
 import { Agencies } from './pages/Agencies';
 import { AgencyDetail } from './pages/AgencyDetail';
 import { Payments } from './pages/Payments';
@@ -60,6 +61,7 @@ function Shell({ user, onSignOut }: { user: User; onSignOut: () => void }) {
           <Route path="/bookings" element={<Bookings />} />
           <Route path="/bookings/new" element={<NewBooking onBooked={pending.reload} />} />
           <Route path="/bookings/:id" element={<BookingDetail />} />
+          <Route path="/bookings/:id/edit" element={<EditBooking />} />
           <Route path="/tickets" element={<Tickets />} />
           <Route path="/payments" element={<Payments />} />
           <Route path="/agencies" element={<Agencies />} />

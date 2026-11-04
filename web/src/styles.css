@@ -150,3 +150,9 @@ td select, td input { min-width: 120px; }
   .calendar-day { min-height: 60px; padding: 4px; }
   .wide-only { display: none; }
 }
+
+.notice.warn { background: var(--warn-soft); color: var(--warn); }
+.form-reload { margin-bottom: 12px; }
+.correction { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: var(--background); max-width: 760px; white-space: normal; }
+.correction h3 { margin: 0 0 4px; font-size: 15px; }
+.nowrap-row { flex-wrap: nowrap; }

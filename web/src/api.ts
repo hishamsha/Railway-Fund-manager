@@ -100,11 +100,14 @@ export async function signOut(): Promise<void> {
 /** Runs a create so that a lost connection can retry without creating it twice. */
 export function createKeyHolder() {
   let key = crypto.randomUUID();
+  let time: string | null = null;
   return {
     current: () => key,
+    // A retry must send the same body as the first try, including its time.
+    stamp: () => { time ??= new Date().toISOString(); return time; },
     // A real answer from the server means the next attempt is a new request.
     settle: (error?: unknown) => {
-      if (!(error instanceof ApiFailure) || error.status !== 0) key = crypto.randomUUID();
+      if (!(error instanceof ApiFailure) || error.status !== 0) { key = crypto.randomUUID(); time = null; }
     },
   };
 }
