@@ -9,7 +9,7 @@ const db = getPrisma();
 
 try {
   const users = await db.appUser.findMany({
-    where: { isActive: true, ...(email ? { emailNormalized: email } : {}) },
+    where: { isActive: true, role: 'owner', ...(email ? { emailNormalized: email } : {}) },
     select: { id: true, emailNormalized: true },
     take: 2,
   });

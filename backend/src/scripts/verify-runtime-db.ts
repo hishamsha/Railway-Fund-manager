@@ -8,7 +8,7 @@ const pool = new Pool({ connectionString, max: 1, connectionTimeoutMillis: 5000 
 const tables = [
   'app_users', 'auth_sessions', 'refresh_tokens', 'packagers', 'bookings',
   'customer_fund_entries', 'wallets', 'wallet_entries', 'operation_requests', 'audit_events',
-  'booking_accounts', 'booking_legs', 'service_charge_rules',
+  'booking_accounts', 'booking_legs', 'service_charge_rules', 'journey_requests',
 ];
 const deletable = ['booking_legs', 'service_charge_rules'];
 

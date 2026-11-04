@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, businessDate, creditCheck, deriveRoute, pickServiceCharge } from '../src/admin/rules.js';
+import { addDays, businessDate, canTransition, creditCheck, deriveRoute, pickServiceCharge } from '../src/admin/rules.js';
 
 const leg = (from: string, to: string, date: string, train: string, fare: number) => ({
   boarding_station: from, destination_station: to, journey_date: date, train_identifier: train, fare_paise: fare });
@@ -57,5 +57,23 @@ describe('credit limit', () => {
   });
   it('lets advance credit absorb a new booking', () => {
     expect(creditCheck(0n, -5000n, 5000n, 0n).allowed).toBe(true);
+  });
+});
+
+describe('journey request transitions', () => {
+  it('allows only the expected moves', () => {
+    expect(canTransition('quote', 'pending')).toBe(true);
+    expect(canTransition('quote', 'quoted')).toBe(true);
+    expect(canTransition('quote', 'accepted')).toBe(false);
+    expect(canTransition('accept', 'quoted')).toBe(true);
+    expect(canTransition('accept', 'pending')).toBe(false);
+    expect(canTransition('book', 'accepted')).toBe(true);
+  });
+  it('treats declined, cancelled and booked as final', () => {
+    for (const status of ['declined', 'cancelled', 'booked']) {
+      for (const action of ['quote', 'accept', 'decline', 'cancel', 'book'] as const) {
+        expect(canTransition(action, status)).toBe(false);
+      }
+    }
   });
 });

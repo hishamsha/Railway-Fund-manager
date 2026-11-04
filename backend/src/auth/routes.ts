@@ -1,4 +1,4 @@
-import { Router, type RequestHandler } from 'express';
+import { Router, type RequestHandler, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import argon2 from 'argon2';
@@ -19,11 +19,14 @@ const resetLimit = rateLimit({ windowMs: 60_000, limit: 5, standardHeaders: 'dra
 const refreshLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false });
 const dummyHash = argon2.hash(randomUUID(), { type: argon2.argon2id });
 
-function publicUser(user: { id: string; emailNormalized: string; displayName: string | null }) {
-  return { id: user.id, email: user.emailNormalized, display_name: user.displayName };
+function publicUser(user: { id: string; emailNormalized: string; displayName: string | null;
+  role: string; packagerId: string | null }) {
+  return { id: user.id, email: user.emailNormalized, display_name: user.displayName,
+    role: user.role, packager_id: user.packagerId };
 }
 
-export const authenticate: RequestHandler = async (request, response, next) => {
+/** Any signed-in user. Use only for routes about the user's own login. */
+export const authenticateUser: RequestHandler = async (request, response, next) => {
   try {
     const match = /^Bearer (\S+)$/i.exec(request.header('authorization') ?? '');
     if (!match) { response.status(401).json(generic); return; }
@@ -37,6 +40,38 @@ export const authenticate: RequestHandler = async (request, response, next) => {
     response.locals.auth = { userId: claims.userId, sessionId: claims.sessionId, user: session.user };
     next();
   } catch { response.status(401).json(generic); }
+};
+
+function forbid(response: Response) {
+  response.status(403).json({ error: { code: 'FORBIDDEN', message: 'This account cannot use this feature',
+    request_id: response.locals.requestId } });
+}
+
+// Owner only, and the default for every business route: the routes treat the
+// signed-in user's id as the owner of the data, so an agency login must never
+// pass here.
+export const authenticate: RequestHandler = (request, response, next) => {
+  void authenticateUser(request, response, (error?: unknown) => {
+    if (error) { next(error); return; }
+    if (response.locals.auth.user.role !== 'owner') { forbid(response); return; }
+    next();
+  });
+};
+
+// Agency portal. Sets response.locals.agency from the login, never from the
+// request, so every portal query is limited to that one packager.
+export const authenticateAgency: RequestHandler = (request, response, next) => {
+  void authenticateUser(request, response, (error?: unknown) => {
+    if (error) { next(error); return; }
+    const { role, agencyOwnerId, packagerId } = response.locals.auth.user;
+    if (role !== 'agency' || !agencyOwnerId || !packagerId) { forbid(response); return; }
+    getPrisma().packager.findFirst({ where: { id: packagerId, ownerId: agencyOwnerId, isArchived: false } })
+      .then((packager) => {
+        if (!packager) { forbid(response); return; }
+        response.locals.agency = { ownerId: agencyOwnerId, packagerId, packager };
+        next();
+      }).catch(next);
+  });
 };
 
 router.post('/login', limit, async (request, response, next) => {
@@ -100,15 +135,15 @@ router.post('/refresh', refreshLimit, async (request, response, next) => {
   } catch (error) { next(error); }
 });
 
-router.get('/me', authenticate, (_request, response) => response.json({ user: publicUser(response.locals.auth.user) }));
-router.post('/logout', authenticate, async (_request, response, next) => {
+router.get('/me', authenticateUser, (_request, response) => response.json({ user: publicUser(response.locals.auth.user) }));
+router.post('/logout', authenticateUser, async (_request, response, next) => {
   try {
     await getPrisma().authSession.update({ where: { id: response.locals.auth.sessionId },
       data: { revokedAt: new Date(), revocationReason: 'logout' } });
     response.status(204).end();
   } catch (error) { next(error); }
 });
-router.post('/change-password', authenticate, async (request, response, next) => {
+router.post('/change-password', authenticateUser, async (request, response, next) => {
   try {
     const body = passwordBody.parse(request.body);
     const { userId, sessionId, user } = response.locals.auth;

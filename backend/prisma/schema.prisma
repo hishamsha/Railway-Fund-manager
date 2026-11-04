@@ -14,13 +14,21 @@ model AppUser {
   passwordHash       String       @map("password_hash")
   displayName        String?      @map("display_name")
   isActive           Boolean      @default(true) @map("is_active")
+  // 'owner' runs the business. 'agency' signs in to one packager's portal and
+  // always has agencyOwnerId and packagerId set; the migration checks this.
+  role               String       @default("owner")
+  agencyOwnerId      String?      @map("agency_owner_id") @db.Uuid
+  packagerId         String?      @map("packager_id") @db.Uuid
   passwordChangedAt  DateTime?    @map("password_changed_at") @db.Timestamptz(6)
   passwordResetHash  String?      @map("password_reset_hash")
   passwordResetExpiresAt DateTime? @map("password_reset_expires_at") @db.Timestamptz(6)
   createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
   sessions           AuthSession[]
-  packagers          Packager[]
+  agencyPackager     Packager?    @relation("AgencyUsers", fields: [agencyOwnerId, packagerId], references: [ownerId, id], onDelete: Restrict)
+  packagers          Packager[]   @relation("PackagerOwner")
+  ownedJourneyRequests JourneyRequest[] @relation("JourneyRequestOwner")
+  sentJourneyRequests  JourneyRequest[] @relation("JourneyRequestAuthor")
   bookings           Booking[]
   wallets            Wallet[]
   customerEntries    CustomerFundEntry[]
@@ -33,6 +41,7 @@ model AppUser {
   ownedAuditEvents   AuditEvent[] @relation("AuditOwner")
   actorAuditEvents   AuditEvent[] @relation("AuditActor")
 
+  @@index([agencyOwnerId, packagerId])
   @@map("app_users")
   @@schema("app")
 }
@@ -83,9 +92,11 @@ model Packager {
   isArchived Boolean   @default(false) @map("is_archived")
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  owner      AppUser   @relation(fields: [ownerId], references: [id])
+  owner      AppUser   @relation("PackagerOwner", fields: [ownerId], references: [id])
   bookings   Booking[]
   serviceChargeRules ServiceChargeRule[]
+  agencyUsers AppUser[] @relation("AgencyUsers")
+  journeyRequests JourneyRequest[]
 
   @@unique([ownerId, id])
   @@index([ownerId, name])
@@ -117,11 +128,49 @@ model Booking {
   deductionEntries    BookingDeductionEntry[]
   walletEntries       WalletEntry[]
   legs                BookingLeg[]
+  journeyRequest      JourneyRequest?
 
   @@unique([ownerId, id])
   @@index([ownerId, packagerId, journeyDate])
   @@index([ownerId, journeyDate])
   @@map("bookings")
+  @@schema("app")
+}
+
+// A journey an agency asks for. The owner quotes an amount, the agency accepts
+// or cancels, and the owner books it, which links the resulting booking.
+model JourneyRequest {
+  id                 String    @id @default(uuid()) @db.Uuid
+  ownerId            String    @map("owner_id") @db.Uuid
+  packagerId         String    @map("packager_id") @db.Uuid
+  requestedByUserId  String    @map("requested_by_user_id") @db.Uuid
+  idempotencyKey     String    @map("idempotency_key") @db.Uuid
+  payloadHash        String    @map("payload_hash")
+  boardingStation    String    @map("boarding_station")
+  destinationStation String    @map("destination_station")
+  journeyDate        DateTime  @map("journey_date") @db.Date
+  trainIdentifier    String?   @map("train_identifier")
+  ticketType         String    @default("direct") @map("ticket_type")
+  passengerCount     Int       @default(1) @map("passenger_count")
+  agencyNote         String?   @map("agency_note")
+  status             String    @default("pending")
+  quotedTicketPricePaise   BigInt?  @map("quoted_ticket_price_paise")
+  quotedServiceChargePaise BigInt?  @map("quoted_service_charge_paise")
+  quoteNote          String?   @map("quote_note")
+  quotedAt           DateTime? @map("quoted_at") @db.Timestamptz(6)
+  declineReason      String?   @map("decline_reason")
+  bookingId          String?   @unique @map("booking_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner              AppUser   @relation("JourneyRequestOwner", fields: [ownerId], references: [id])
+  requestedBy        AppUser   @relation("JourneyRequestAuthor", fields: [requestedByUserId], references: [id])
+  packager           Packager  @relation(fields: [ownerId, packagerId], references: [ownerId, id])
+  booking            Booking?  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  @@unique([packagerId, idempotencyKey])
+  @@index([ownerId, status, journeyDate])
+  @@index([ownerId, packagerId, createdAt])
+  @@map("journey_requests")
   @@schema("app")
 }
 
