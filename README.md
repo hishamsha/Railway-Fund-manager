@@ -63,7 +63,7 @@ npm.cmd test
 npm.cmd run build
 ```
 
-See [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) for verification status and [`docs/RELEASE_RUNBOOK.md`](docs/RELEASE_RUNBOOK.md) for hosting, signing and recovery steps.
+To put the app online, follow [`docs/HOSTING.md`](docs/HOSTING.md). See [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) for verification status and [`docs/RELEASE_RUNBOOK.md`](docs/RELEASE_RUNBOOK.md) for hosting, signing and recovery steps.
 
 ## Development database and authentication
 

@@ -1,5 +1,11 @@
 # Documentation review and implementation status
 
+## Hosting preparation, 5 November 2026
+
+The Docker image now builds from the repository root and the API serves the built web app, so the site is one Render service at one address. `TRUST_PROXY_HOPS` gives each visitor their own login rate limit behind a proxy. `npm run hosted:setup` prepares a new database and the host's secret files, and refuses a non-UTC database. Steps are in `HOSTING.md`.
+
+Verified locally: the setup script ran twice on a disposable PostgreSQL 17, and all 36 backend tests and `db:reconcile` passed with the API connected as the role it created. The app ran with `NODE_ENV=production`, `WEB_DIST` and the live security headers: sign-in, reload on an inner address and asset caching all worked. Not verified: the Docker build, which has no local Docker and runs in CI; TLS and the pooler login against real Supabase; the owner login step of the script; the right `TRUST_PROXY_HOPS` value on Render. Nothing has been deployed.
+
 ## Agency portal screens, 5 November 2026
 
 `web/` now shows agencies their own portal after sign-in: home summary, journey calendar, bookings, payments, journey requests with quote accept and cancel, and password change. The sign-in page gained password setup with a one-time code, for new agency logins and for recovery. The owner's screens gained password change too. There are no backend changes; the API enforces roles and agency limits on every route, and the web client only chooses which screens to show.

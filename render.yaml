@@ -1,23 +1,28 @@
 services:
   - type: web
-    name: train-fund-manager-api
+    name: train-fund-manager
     runtime: docker
+    region: singapore
     plan: free
     dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerContext: .
     healthCheckPath: /ready
     envVars:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
         sync: false
+      - key: TRUST_PROXY_HOPS
+        value: 1
       - key: JWT_PRIVATE_KEY_FILE
         value: /etc/secrets/jwt-private.pem
       - key: JWT_PUBLIC_KEY_FILE
         value: /etc/secrets/jwt-public.pem
       - key: JWT_ACTIVE_KID
-        value: development-1
+        value: production-1
       - key: JWT_ISSUER
         value: train-fund-manager-api
       - key: JWT_AUDIENCE
         value: train-fund-manager-mobile
+      - key: NODE_EXTRA_CA_CERTS
+        value: /etc/secrets/prod-ca-2021.crt
