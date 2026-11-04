@@ -44,7 +44,7 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run db:reconcile
-      - run: docker build -t train-fund-manager-api:ci .
+      - run: docker build -f Dockerfile -t train-fund-manager-api:ci ..
   web:
     runs-on: ubuntu-latest
     defaults:

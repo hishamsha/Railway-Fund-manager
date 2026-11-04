@@ -22,6 +22,7 @@
     "db:inventory": "tsx src/scripts/inventory-db.ts",
     "db:reconcile": "tsx src/scripts/reconcile-finance.ts",
     "qa:benchmark": "tsx src/scripts/benchmark-reports.ts",
+    "hosted:setup": "tsx src/scripts/setup-hosted.ts",
     "owner:bootstrap": "tsx src/scripts/bootstrap-owner.ts",
     "owner:recovery-code": "tsx src/scripts/issue-recovery-code.ts",
     "auth:dev-keys": "tsx src/scripts/generate-dev-keys.ts"

@@ -1,0 +1,17 @@
+.git
+.github
+docs
+mobile
+**/node_modules
+**/dist
+**/coverage
+**/*.log
+**/*.pem
+**/*.key
+**/*.crt
+**/.env
+**/.env.*
+backend/.secrets
+backend/src/generated
+backend/tests
+web/src/**/*.test.ts

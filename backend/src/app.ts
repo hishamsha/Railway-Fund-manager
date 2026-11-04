@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import express from 'express';
 import helmet from 'helmet';
 import { authRouter } from './auth/routes.js';
@@ -20,6 +21,10 @@ import { requestId } from './middleware/request-id.js';
 export const app = express();
 
 app.disable('x-powered-by');
+// Behind a host's proxy every visitor would otherwise share one address, and so
+// one login rate limit. Set this to the number of proxies in front of the API.
+const proxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+if (proxyHops > 0) app.set('trust proxy', proxyHops);
 app.use(helmet());
 app.use(requestId);
 app.use(express.json({ limit: '64kb' }));
@@ -51,6 +56,16 @@ app.use('/api/v1/booking-accounts', bookingAccountRouter);
 app.use('/api/v1/service-charge-rules', serviceChargeRuleRouter);
 // /tickets, /calendar, /agenda and /finance/pending-agencies
 app.use('/api/v1', trackerRouter);
+
+// In production the API also serves the built web app, so both share one address.
+if (process.env.WEB_DIST) {
+  const webDist = resolve(process.env.WEB_DIST);
+  app.use('/assets', express.static(resolve(webDist, 'assets'), { immutable: true, maxAge: '1y', fallthrough: true }));
+  // The browser app handles its own addresses, but never answer for the API or a missing file.
+  app.get(/^(?!\/api(\/|$)|\/assets\/).*/, (_request, response) => {
+    response.sendFile('index.html', { root: webDist, headers: { 'Cache-Control': 'no-cache' }, cacheControl: false });
+  });
+}
 
 app.use(notFound);
 app.use(errorHandler);
