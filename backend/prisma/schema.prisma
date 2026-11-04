@@ -189,6 +189,8 @@ model BookingLeg {
   bookingAccountId   String?         @map("booking_account_id") @db.Uuid
   pnr                String?
   ticketStatus       String          @default("booked") @map("ticket_status")
+  // Billed instead of the fare once cancelled; must be 0 otherwise.
+  cancellationChargePaise BigInt     @default(0) @map("cancellation_charge_paise")
   createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
   owner              AppUser         @relation(fields: [ownerId], references: [id])

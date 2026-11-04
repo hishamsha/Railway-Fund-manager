@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, ticketStatuses, type BookingAccount, type TrackedLeg } from '../api';
-import { formatDate, formatRupees } from '../money';
+import { formatDate, formatRupees, paiseToInput, parseRupees } from '../money';
 import { AgencyLink, Empty, Field, Loading, Notice, PageHeader, Panel, Route, StatusSelect, statusLabel, useAction, useApi,
   usePackagers } from '../ui';
 
 function TicketRow({ leg, accounts, onSaved }: { leg: TrackedLeg; accounts: BookingAccount[]; onSaved: () => void }) {
   const [pnr, setPnr] = useState(leg.pnr ?? '');
+  const savedCharge = leg.cancellation_charge_paise ? paiseToInput(leg.cancellation_charge_paise) : '';
+  const [charge, setCharge] = useState(savedCharge);
   const { busy, error, setError, run } = useAction();
   const route = `${leg.boarding_station} to ${leg.destination_station}`;
   const save = (body: object) => run(async () => {
@@ -18,6 +20,13 @@ function TicketRow({ leg, accounts, onSaved }: { leg: TrackedLeg; accounts: Book
     if (next === (leg.pnr ?? '')) return;
     void save({ pnr: next || null }).then((saved) => { if (!saved) setPnr(leg.pnr ?? ''); });
   };
+  const saveCharge = () => {
+    const text = charge.trim();
+    if (text === savedCharge) return;
+    const paise = text ? parseRupees(text) : 0;
+    if (paise === null) { setError(new Error('Enter the charge in rupees, such as 50 or 50.50.')); setCharge(savedCharge); return; }
+    void save({ cancellation_charge_paise: paise }).then((saved) => { if (!saved) setCharge(savedCharge); });
+  };
   // An archived account is still shown on the tickets it bought.
   const known = accounts.some((account) => account.id === leg.booking_account_id);
   return (
@@ -27,7 +36,7 @@ function TicketRow({ leg, accounts, onSaved }: { leg: TrackedLeg; accounts: Book
         <td><Link to={`/bookings/${leg.booking_id}`}><Route from={leg.boarding_station} to={leg.destination_station} /></Link>
           <div className="muted small">Train {leg.train_identifier}{leg.ticket_type === 'connected' ? ` · Leg ${leg.sequence}` : ''}</div></td>
         <td><AgencyLink id={leg.packager_id} name={leg.packager_name} /></td>
-        <td className="num">{formatRupees(leg.fare_paise)}</td>
+        <td className="num">{leg.ticket_status === 'cancelled' ? <s>{formatRupees(leg.fare_paise)}</s> : formatRupees(leg.fare_paise)}</td>
         <td><select aria-label={`Booked from, ${route}`} disabled={busy} value={leg.booking_account_id ?? ''}
           onChange={(event) => void save({ booking_account_id: event.target.value || null })}>
           <option value="">Not set</option>
@@ -38,7 +47,10 @@ function TicketRow({ leg, accounts, onSaved }: { leg: TrackedLeg; accounts: Book
           onChange={(event) => { setPnr(event.target.value); setError(null); }} onBlur={savePnr}
           onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></td>
         <td><StatusSelect label={`Status, ${route}`} value={leg.ticket_status} disabled={busy}
-          onChange={(status) => void save({ ticket_status: status })} /></td>
+          onChange={(status) => void save({ ticket_status: status })} />
+          {leg.ticket_status === 'cancelled' && <input className="charge" aria-label={`Cancellation charge in rupees, ${route}`} inputMode="decimal" disabled={busy}
+            value={charge} placeholder="Charge (₹)" onChange={(event) => { setCharge(event.target.value); setError(null); }} onBlur={saveCharge}
+            onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} />}</td>
       </tr>
       {error && <tr><td colSpan={7}><Notice error={error} /></td></tr>}
     </>
@@ -62,7 +74,7 @@ export function Tickets() {
   };
   return (
     <>
-      <PageHeader title="Ticket tracker" subtitle="Change a status, PNR or source account here. It saves straight away." />
+      <PageHeader title="Ticket tracker" subtitle="Change a status, PNR or source account here. It saves straight away. Cancelling a ticket stops its fare counting toward what the agency owes." />
       <Panel>
         <div className="filters">
           <Field label="Status"><select value={params.get('status') ?? ''} onChange={(event) => filter('status', event.target.value)}>
@@ -85,7 +97,7 @@ export function Tickets() {
           <div className="table-wrap"><table>
             <thead><tr><th>Date</th><th>Journey</th><th>Agency</th><th className="num">Fare</th><th>Booked from</th><th>PNR</th><th>Status</th></tr></thead>
             <tbody>{tickets.data.items.map((leg) => (
-              <TicketRow key={`${leg.id}-${leg.pnr ?? ''}`} leg={leg} accounts={accounts.data?.items ?? []} onSaved={tickets.reload} />
+              <TicketRow key={`${leg.id}-${leg.pnr ?? ''}-${leg.ticket_status}-${leg.cancellation_charge_paise}`} leg={leg} accounts={accounts.data?.items ?? []} onSaved={tickets.reload} />
             ))}</tbody>
           </table></div>
         )}

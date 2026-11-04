@@ -57,7 +57,13 @@ export function pickServiceCharge(rules: ChargeRule[], packagerId: string,
 }
 
 export type LegInput = { boarding_station: string; destination_station: string;
-  journey_date: string; train_identifier: string; fare_paise: number };
+  journey_date: string; train_identifier: string; fare_paise: number;
+  ticket_status?: string; cancellation_charge_paise?: number };
+
+/** What a ticket bills: its fare, or only its cancellation charge once cancelled. */
+export function legBilledPaise(status: string | undefined, farePaise: number, chargePaise = 0): number {
+  return status === 'cancelled' ? chargePaise : farePaise;
+}
 
 export type DerivedRoute = { boarding_station: string; destination_station: string;
   journey_date: string; train_identifier: string; ticket_price_paise: number; ticket_type: TicketType };
@@ -88,7 +94,8 @@ export function deriveRoute(legs: LegInput[]): DerivedRoute | { error: string } 
     destination_station: last.destination_station,
     journey_date: first.journey_date,
     train_identifier: trains.length > 160 ? `${trains.slice(0, 157)}...` : trains,
-    ticket_price_paise: legs.reduce((total, leg) => total + leg.fare_paise, 0),
+    ticket_price_paise: legs.reduce((total, leg) => total +
+      legBilledPaise(leg.ticket_status, leg.fare_paise, leg.cancellation_charge_paise), 0),
     ticket_type: legs.length > 1 ? 'connected' : 'direct',
   };
 }

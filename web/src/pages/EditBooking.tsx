@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ApiFailure, api, createKeyHolder, type BookingAccount, type Leg, type Packager } from '../api';
 import { formatRupees, paiseToInput, parseRupees } from '../money';
 import { Field, Loading, Notice, PageHeader, Panel, useAction, useApi } from '../ui';
-import { LegFields, legFares, legToForm, legsToBody, type LegForm } from './LegFields';
+import { LegFields, legToForm, legsBilled, legsToBody, legsValid, type LegForm } from './LegFields';
 
 type Booking = { id: string; packager_id: string; booking_person_mobile: string | null; notes: string | null;
   payment_due_date: string | null; updated_at: string; legs: Leg[] };
@@ -47,12 +47,11 @@ export function EditBooking() {
   if (detail.error) return <Notice error={detail.error} />;
   if (!booking || !money || !filled) return <Loading />;
 
-  const fares = legFares(legs);
   const chargePaise = parseRupees(charge);
   const collectedPaise = parseRupees(collected);
   const deductedPaise = parseRupees(deducted);
-  const valid = fares.every((fare) => fare !== null) && chargePaise !== null && collectedPaise !== null && deductedPaise !== null;
-  const newPayable = fares.reduce<number>((total, fare) => total + (fare ?? 0), 0) + (chargePaise ?? 0);
+  const valid = legsValid(legs) && chargePaise !== null && collectedPaise !== null && deductedPaise !== null;
+  const newPayable = legsBilled(legs) + (chargePaise ?? 0);
   const balance = newPayable - (collectedPaise ?? 0);
   const moneyCorrected = collectedPaise !== money.collected_paise || deductedPaise !== money.wallet_deducted_paise;
 

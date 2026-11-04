@@ -19,6 +19,11 @@ export function paiseToInput(paise: number): string {
   return rest === 0 ? String(whole) : `${whole}.${String(rest).padStart(2, '0')}`;
 }
 
+/** What a ticket bills: its fare, or only its cancellation charge once cancelled. */
+export function billedPaise(status: string, farePaise: number, chargePaise: number): number {
+  return status === 'cancelled' ? chargePaise : farePaise;
+}
+
 const grouped = new Intl.NumberFormat('en-IN');
 
 /** Indian grouping, with paise only when there are any: ₹1,24,600 or ₹19.99. */

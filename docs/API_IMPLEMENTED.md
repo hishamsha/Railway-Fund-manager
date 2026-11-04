@@ -134,7 +134,17 @@ Every booking has one or more legs (`booking.legs`, ordered by `sequence`). Each
 - **Credit limit**: when the packager has `credit_limit_paise`, a booking that would raise its net due (all payable minus net collections, plus this booking's payable minus `initial_collected_paise`) above the limit returns 409 `CREDIT_LIMIT_EXCEEDED`, unless the body has `allow_over_credit_limit: true`. Concurrent bookings for one packager are serialized by a row lock.
 - **Payment due date**: optional `payment_due_date` on create and edit (`null` clears it). The effective due date is `payment_due_date`, else the journey date.
 - **Edit** (`PATCH /bookings/:id`) may send `legs` instead of the top-level route fields to replace all legs. Without `legs`, a single-leg booking's leg follows the edited route and keeps its id, account, PNR and status. A connected booking edited without `legs` must keep its route and price, otherwise 409 `LEGS_REQUIRED`.
-- `PATCH /bookings/:id/legs/:legId` sets any of `ticket_status`, `pnr`, `booking_account_id` (null clears). It does not change money and is audited as `booking_leg`/`track`.
+- `PATCH /bookings/:id/legs/:legId` sets any of `ticket_status`, `pnr`, `booking_account_id` (null clears), `cancellation_charge_paise`. Cancelling or restoring a ticket changes what the booking bills. It is audited as `booking_leg`/`track`.
+
+### Cancelled tickets
+
+A cancelled leg stops counting at its fare and bills only its `cancellation_charge_paise` (default 0). A booking's `ticket_price_paise` is always what its legs bill: active fares plus cancellation charges. It can be 0 when every ticket is cancelled. Every due, statement, dashboard and report figure follows it. The service charge does not change on its own.
+
+- A charge on a ticket that isn't cancelled returns 422. Changing a ticket from cancelled to another status clears its charge and bills the fare again, with no credit limit check.
+- `PATCH /bookings/:id/legs/:legId` also accepts `cancellation_charge_paise` and now returns `{ "leg", "financials" }`. Its audit event records the booking's ticket price before and after.
+- A top-level edit of a cancelled direct ticket must send its current `ticket_price_paise`, or it returns 409 `LEGS_REQUIRED`; its fare and charge stay as they are.
+- Money already collected stays recorded. It shows as advance credit until refunded, and wallet deductions need correcting separately.
+- `db:reconcile` reports `ticket_price_mismatches` if a booking's price differs from what its legs bill.
 
 ### Tracker and dues
 

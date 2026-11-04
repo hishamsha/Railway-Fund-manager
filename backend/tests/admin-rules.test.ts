@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, businessDate, canTransition, creditCheck, deriveRoute, pickServiceCharge } from '../src/admin/rules.js';
+import { addDays, businessDate, canTransition, creditCheck, deriveRoute, legBilledPaise, pickServiceCharge } from '../src/admin/rules.js';
 
 const leg = (from: string, to: string, date: string, train: string, fare: number) => ({
   boarding_station: from, destination_station: to, journey_date: date, train_identifier: train, fare_paise: fare });
@@ -75,5 +75,18 @@ describe('journey request transitions', () => {
         expect(canTransition(action, status)).toBe(false);
       }
     }
+  });
+});
+
+describe('billing cancelled tickets', () => {
+  it('bills the fare until cancelled, then only the charge', () => {
+    expect(legBilledPaise('booked', 5000)).toBe(5000);
+    expect(legBilledPaise('cancelled', 5000)).toBe(0);
+    expect(legBilledPaise('cancelled', 5000, 700)).toBe(700);
+  });
+  it('leaves cancelled fares out of the booking price', () => {
+    const route = deriveRoute([{ ...leg('A', 'B', '2026-11-10', '1', 1000) },
+      { ...leg('B', 'C', '2026-11-10', '2', 2000), ticket_status: 'cancelled', cancellation_charge_paise: 300 }]);
+    expect(route).toMatchObject({ ticket_price_paise: 1300, ticket_type: 'connected', destination_station: 'C' });
   });
 });

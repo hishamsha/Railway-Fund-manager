@@ -3,7 +3,7 @@ import { closePrisma, getPrisma } from '../database/prisma.js';
 
 const db = getPrisma();
 try {
-  const [wallets, receipts, debits, incomplete] = await Promise.all([
+  const [wallets, receipts, debits, incomplete, ticketPrices] = await Promise.all([
     db.$queryRaw<Array<{ count: bigint }>>`
       SELECT count(*)::bigint AS count FROM app.wallets w
       LEFT JOIN (
@@ -31,11 +31,21 @@ try {
       WHERE original.entry_type <> 'booking_debit' OR linked.returned > original.amount_paise`,
     db.operationRequest.count({ where: { completedAt: null,
       createdAt: { lt: new Date(Date.now() - 10 * 60 * 1000) } } }),
+    // A booking's ticket price is what its tickets bill.
+    db.$queryRaw<Array<{ count: bigint }>>`
+      SELECT count(*)::bigint AS count FROM app.bookings b
+      JOIN (
+        SELECT booking_id, sum(CASE WHEN ticket_status = 'cancelled'
+          THEN cancellation_charge_paise ELSE fare_paise END) AS billed
+        FROM app.booking_legs GROUP BY booking_id
+      ) legs ON legs.booking_id = b.id
+      WHERE b.ticket_price_paise <> legs.billed`,
   ]);
   const result = { wallet_mismatches: Number(wallets[0]!.count),
     receipt_over_corrections: Number(receipts[0]!.count),
     debit_over_corrections: Number(debits[0]!.count),
-    incomplete_operations: incomplete };
+    incomplete_operations: incomplete,
+    ticket_price_mismatches: Number(ticketPrices[0]!.count) };
   process.stdout.write(`${JSON.stringify(result)}\n`);
   if (Object.values(result).some((value) => value !== 0)) process.exitCode = 1;
 } finally {
