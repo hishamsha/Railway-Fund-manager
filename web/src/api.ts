@@ -93,6 +93,13 @@ export async function signIn(email: string, password: string): Promise<User> {
   return tokens.user;
 }
 
+export async function resetPassword(email: string, code: string, newPassword: string): Promise<void> {
+  const response = await send('/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, recovery_code: code, new_password: newPassword }) });
+  if (response.status === 401) throw new ApiFailure(401, 'UNAUTHORIZED', 'That email and setup code do not match, or the code has expired or been used.');
+  if (!response.ok) throw await failure(response);
+}
+
 export async function signOut(): Promise<void> {
   try { await api('/auth/logout', { method: 'POST' }); } catch { /* the local sign-out still happens */ } finally { clearTokens(); }
 }

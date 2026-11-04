@@ -4,7 +4,7 @@ Fund tracking for an operator handling bulk train-ticket requests from packagers
 
 ## Architecture
 
-`mobile/` is the primary Flutter application. It uses authenticated REST calls to `backend/`, a Node.js/Express/TypeScript API with Prisma. Supabase provides PostgreSQL only; the app never connects to it directly. `web/` is the React and Vite admin page for the owner. Money is stored as integer paise, with customer receipts separate from operator wallet movements.
+`mobile/` is the primary Flutter application. It uses authenticated REST calls to `backend/`, a Node.js/Express/TypeScript API with Prisma. Supabase provides PostgreSQL only; the app never connects to it directly. `web/` is the React and Vite client for the owner and for agencies. Money is stored as integer paise, with customer receipts separate from operator wallet movements.
 
 ## Run the API
 
@@ -35,7 +35,7 @@ The only retained APK is the 64-bit Android profile build at `mobile/build/app/o
 
 ## Run the web admin
 
-`web/` is the owner's admin page, built with React and Vite. It covers today's journeys and dues, the calendar, journey requests, bookings, the ticket tracker, payments and credit, agencies and their logins, booking accounts and service charges. Agency logins are refused here; the agency portal has an API but no screens yet. Bookings can be edited, and payments refunded or reversed.
+`web/` is the owner's admin page and the agency portal, built with React and Vite. It covers today's journeys and dues, the calendar, journey requests, bookings, the ticket tracker, payments and credit, agencies and their logins, booking accounts and service charges. Agencies sign in at the same address and get their own portal: their calendar, bookings, what they owe, payments and journey requests. A new agency login sets its password from the sign-in page with the setup code the owner gives it. Bookings can be edited, and payments refunded or reversed.
 
 Start the API, then in a second terminal:
 

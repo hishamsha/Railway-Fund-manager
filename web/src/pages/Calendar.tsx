@@ -7,13 +7,13 @@ import { AgencyLink, Empty, Loading, Notice, PageHeader, Panel, Route, StatusBad
 
 type Day = { date: string; total: number; by_status: Record<string, number> };
 
-function monthGrid(month: string) {
+export function monthGrid(month: string) {
   const first = `${month}-01`;
   const weekday = new Date(`${first}T00:00:00Z`).getUTCDay();
   const start = addDays(first, -((weekday + 6) % 7)); // Weeks start on Monday.
   return Array.from({ length: 42 }, (_, index) => addDays(start, index));
 }
-function shiftMonth(month: string, by: number): string {
+export function shiftMonth(month: string, by: number): string {
   const [year, number] = month.split('-').map(Number) as [number, number];
   return new Date(Date.UTC(year, number - 1 + by, 1)).toISOString().slice(0, 7);
 }
