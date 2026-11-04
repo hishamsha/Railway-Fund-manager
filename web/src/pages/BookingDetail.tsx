@@ -128,7 +128,13 @@ export function BookingDetail() {
       <PageHeader title={`${booking.boarding_station} → ${booking.destination_station}`}
         subtitle={`${formatDate(booking.journey_date)} · ${booking.ticket_type === 'connected' ? 'Connected' : 'Direct'} ticket${booking.booking_person_mobile ? ` · ${booking.booking_person_mobile}` : ''}`}
         action={<Link className="button ghost" to={`/bookings/${id}/edit`}><Pencil aria-hidden="true" size={16} /> Edit booking</Link>} />
-      {hasCancelled && <div className="notice warn" role="status">A ticket on this booking is cancelled, but its fare still counts in what the agency owes. To change that, edit the fare and record any refund.</div>}
+      {hasCancelled && (
+        <div className="notice info" role="status">
+          A cancelled ticket no longer counts toward what the agency owes, except any cancellation charge. The service charge stays until you edit it.
+          {money.advance_credit_paise > 0 && ` The agency now has ${formatRupees(money.advance_credit_paise)} in credit on this booking; refund it from History if you're paying it back.`}
+          {money.wallet_deducted_paise > 0 && ' If you got money back for this ticket, correct the wallet deduction in Edit booking.'}
+        </div>
+      )}
       <div className="stats">
         <Stat label="Total payable" value={formatRupees(money.total_payable_paise)} />
         <Stat label="Collected" value={formatRupees(money.collected_paise)} />
@@ -140,7 +146,7 @@ export function BookingDetail() {
       <Panel title="Details">
         <dl className="details">
           <div><dt>Agency</dt><dd>{packager.data ? <AgencyLink id={booking.packager_id} name={packager.data.packager.name} /> : '…'}</dd></div>
-          <div><dt>Ticket price</dt><dd>{formatRupees(money.ticket_price_paise)}</dd></div>
+          <div><dt>Tickets billed</dt><dd>{formatRupees(money.ticket_price_paise)}</dd></div>
           <div><dt>Service charge</dt><dd>{formatRupees(money.service_charge_paise)}</dd></div>
           <div><dt>Wallet deducted</dt><dd>{formatRupees(money.wallet_deducted_paise)}</dd></div>
           <div><dt>Payment due</dt><dd>{formatDate(booking.payment_due_date ?? booking.journey_date)} {money.balance_due_paise > 0 && <Due paise={money.balance_due_paise} />}</dd></div>
@@ -156,7 +162,10 @@ export function BookingDetail() {
               <td><Route from={leg.boarding_station} to={leg.destination_station} /></td>
               <td className="nowrap">{formatDate(leg.journey_date)}</td>
               <td>{leg.train_identifier}</td>
-              <td className="num">{formatRupees(leg.fare_paise)}</td>
+              <td className="num">{leg.ticket_status === 'cancelled' ? <>
+                <s>{formatRupees(leg.fare_paise)}</s>
+                <div className="muted small">{leg.cancellation_charge_paise > 0 ? `${formatRupees(leg.cancellation_charge_paise)} charge` : 'No charge'}</div>
+              </> : formatRupees(leg.fare_paise)}</td>
               <td>{accountName(leg.booking_account_id)}</td>
               <td>{leg.pnr ?? '—'}</td>
               <td><StatusBadge status={leg.ticket_status} /></td>

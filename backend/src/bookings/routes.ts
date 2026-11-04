@@ -74,6 +74,7 @@ const legUpdateBody = z.strictObject({
   ticket_status: ticketStatus.optional(),
   pnr: pnr.nullable().optional(),
   booking_account_id: uuid.nullable().optional(),
+  cancellation_charge_paise: paise.optional(),
 }).refine((body) => Object.keys(body).length > 0, 'At least one field is required');
 const listQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: uuid.optional(), packager_id: uuid.optional() });
@@ -94,7 +95,8 @@ const editBody = z.strictObject({
   destination_station: station.optional(),
   journey_date: z.iso.date().optional(),
   train_identifier: z.string().trim().min(1).max(160).optional(),
-  ticket_price_paise: paise.positive().optional(),
+  // Zero only for a booking whose tickets are all cancelled.
+  ticket_price_paise: paise.optional(),
   // Replaces every leg. Without it, a single-leg booking's leg follows the
   // top-level route; a connected booking's route can only change via legs.
   legs: legsBody.optional(),
@@ -336,8 +338,20 @@ router.patch('/:id', async (request, response, next) => {
       } else if (!legs) {
         // Keep the single leg's ticket source and status while its route follows the booking.
         const current = before.legs[0];
-        legs = [{ ...requestedLegs(body)[0]!, booking_account_id: current?.bookingAccountId ?? null,
-          pnr: current?.pnr ?? null, ticket_status: current?.ticketStatus as LegBody['ticket_status'] }];
+        const cancelled = current?.ticketStatus === 'cancelled';
+        // A cancelled ticket's price is its charge, not its fare, so a top-level
+        // price cannot say which to change.
+        if (cancelled && BigInt(body.ticket_price_paise!) !== before.ticketPricePaise) {
+          throw new ApiError(409, 'LEGS_REQUIRED', 'Edit the legs to change a cancelled ticket’s fare or charge');
+        }
+        if (!cancelled && body.ticket_price_paise === 0) {
+          throw new ApiError(422, 'INVALID_LEGS', 'Ticket price must be more than zero');
+        }
+        const requested = requestedLegs(body)[0]!;
+        legs = [{ ...requested, fare_paise: cancelled ? Number(current.farePaise) : requested.fare_paise,
+          booking_account_id: current?.bookingAccountId ?? null, pnr: current?.pnr ?? null,
+          ticket_status: current?.ticketStatus as LegBody['ticket_status'],
+          cancellation_charge_paise: Number(current?.cancellationChargePaise ?? 0) }];
       }
       const route = legs ? routeFromLegs(legs) : { boarding_station: body.boarding_station!,
         destination_station: body.destination_station!, journey_date: body.journey_date!,
@@ -583,23 +597,42 @@ router.patch('/:id/legs/:legId', async (request, response, next) => {
     const legId = uuid.parse(request.params.legId);
     const body = legUpdateBody.parse(request.body);
     const owner = response.locals.auth.userId as string;
-    const leg = await getPrisma().$transaction(async (tx) => {
+    const result = await getPrisma().$transaction(async (tx) => {
+      // Cancelling changes what the booking bills, so lock it first.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM app.bookings WHERE id = ${bookingId}::uuid
+        AND owner_id = ${owner}::uuid FOR UPDATE`;
+      if (!locked.length) throw new ApiError(404, 'NOT_FOUND', 'Resource not found');
       const before = await tx.bookingLeg.findFirst({ where: { id: legId, bookingId, ownerId: owner } });
       if (!before) throw new ApiError(404, 'NOT_FOUND', 'Resource not found');
       if (body.booking_account_id && body.booking_account_id !== before.bookingAccountId) {
         await requireAccounts(tx, owner, [body.booking_account_id]);
       }
+      const status = body.ticket_status ?? before.ticketStatus;
+      if (status !== 'cancelled' && body.cancellation_charge_paise) {
+        throw new ApiError(422, 'CHARGE_NEEDS_CANCELLED', 'Only a cancelled ticket can have a cancellation charge');
+      }
       const after = await tx.bookingLeg.update({ where: { id: legId }, data: {
-        ...(body.ticket_status !== undefined ? { ticketStatus: body.ticket_status } : {}),
+        ticketStatus: status,
+        // Restoring a ticket clears its charge, because the fare counts again.
+        cancellationChargePaise: status === 'cancelled'
+          ? BigInt(body.cancellation_charge_paise ?? before.cancellationChargePaise) : 0n,
         ...(body.pnr !== undefined ? { pnr: body.pnr } : {}),
         ...(body.booking_account_id !== undefined ? { bookingAccountId: body.booking_account_id } : {}),
       } });
+      const legs = await tx.bookingLeg.findMany({ where: { ownerId: owner, bookingId } });
+      const billed = legs.reduce((total, leg) => total + (leg.ticketStatus === 'cancelled'
+        ? leg.cancellationChargePaise : leg.farePaise), 0n);
+      const beforeBooking = await tx.booking.findFirstOrThrow({ where: { id: bookingId, ownerId: owner } });
+      const booking = billed === beforeBooking.ticketPricePaise ? beforeBooking
+        : await tx.booking.update({ where: { id: bookingId }, data: { ticketPricePaise: billed } });
       await tx.auditEvent.create({ data: { ownerId: owner, actorUserId: owner,
         entityType: 'booking_leg', entityId: legId, action: 'track',
-        beforeJson: legJson(before), afterJson: legJson(after) } });
-      return after;
+        beforeJson: { ...legJson(before), booking_ticket_price_paise: Number(beforeBooking.ticketPricePaise) },
+        afterJson: { ...legJson(after), booking_ticket_price_paise: Number(booking.ticketPricePaise) } } });
+      return { leg: legJson(after), financials: await bookingFinancials(booking, tx) };
     });
-    response.json({ leg: legJson(leg) });
+    response.json(result);
   } catch (error) { next(error); }
 });
 

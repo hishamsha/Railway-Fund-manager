@@ -16,13 +16,15 @@ export const legBody = z.strictObject({
   booking_account_id: z.uuid().nullable().optional(),
   pnr: pnr.nullable().optional(),
   ticket_status: ticketStatus.optional(),
-});
+  cancellation_charge_paise: z.number().int().safe().min(0).max(1_000_000_000_000).optional(),
+}).refine((leg) => !leg.cancellation_charge_paise || leg.ticket_status === 'cancelled',
+  { path: ['cancellation_charge_paise'], message: 'Only a cancelled ticket can have a cancellation charge' });
 export const legsBody = z.array(legBody).min(1).max(20);
 export type LegBody = z.infer<typeof legBody>;
 
 type LegRow = { id: string; sequence: number; boardingStation: string; destinationStation: string;
   journeyDate: Date; trainIdentifier: string; farePaise: bigint; bookingAccountId: string | null;
-  pnr: string | null; ticketStatus: string; updatedAt: Date };
+  pnr: string | null; ticketStatus: string; cancellationChargePaise: bigint; updatedAt: Date };
 
 export function legJson(leg: LegRow) {
   return { id: leg.id, sequence: leg.sequence,
@@ -30,6 +32,7 @@ export function legJson(leg: LegRow) {
     journey_date: leg.journeyDate.toISOString().slice(0, 10),
     train_identifier: leg.trainIdentifier, fare_paise: Number(leg.farePaise),
     booking_account_id: leg.bookingAccountId, pnr: leg.pnr, ticket_status: leg.ticketStatus,
+    cancellation_charge_paise: Number(leg.cancellationChargePaise),
     updated_at: leg.updatedAt.toISOString() };
 }
 
@@ -45,7 +48,8 @@ export function legRows(owner: string, bookingId: string, legs: LegBody[]) {
     boardingStation: leg.boarding_station, destinationStation: leg.destination_station,
     journeyDate: dateOnly(leg.journey_date), trainIdentifier: leg.train_identifier,
     farePaise: BigInt(leg.fare_paise), bookingAccountId: leg.booking_account_id ?? null,
-    pnr: leg.pnr ?? null, ticketStatus: leg.ticket_status ?? 'booked' }));
+    pnr: leg.pnr ?? null, ticketStatus: leg.ticket_status ?? 'booked',
+    cancellationChargePaise: BigInt(leg.cancellation_charge_paise ?? 0) }));
 }
 
 /** Every referenced booking account must be the owner's and still active. */

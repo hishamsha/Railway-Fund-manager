@@ -68,12 +68,12 @@ function notFound(): ApiError {
 const moneyIn = ['receipt', 'collection_adjustment_increase'];
 
 type PortalLeg = { id: string; sequence: number; boardingStation: string; destinationStation: string; journeyDate: Date;
-  trainIdentifier: string; farePaise: bigint; pnr: string | null; ticketStatus: string };
+  trainIdentifier: string; farePaise: bigint; pnr: string | null; ticketStatus: string; cancellationChargePaise: bigint };
 function legJson(leg: PortalLeg) {
   return { id: leg.id, sequence: leg.sequence, boarding_station: leg.boardingStation,
     destination_station: leg.destinationStation, journey_date: leg.journeyDate.toISOString().slice(0, 10),
     train_identifier: leg.trainIdentifier, fare_paise: safeMoney(leg.farePaise), pnr: leg.pnr,
-    ticket_status: leg.ticketStatus };
+    ticket_status: leg.ticketStatus, cancellation_charge_paise: safeMoney(leg.cancellationChargePaise) };
 }
 type PortalBooking = { id: string; boardingStation: string; destinationStation: string; journeyDate: Date;
   trainIdentifier: string; ticketType: string; bookingPersonMobile: string | null; paymentDueDate: Date | null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, formatDate, formatRupees, indiaToday, paiseToInput, parseRupees } from './money';
+import { addDays, billedPaise, formatDate, formatRupees, indiaToday, paiseToInput, parseRupees } from './money';
 
 describe('parseRupees', () => {
   it('reads typed rupees as exact paise', () => {
@@ -14,6 +14,14 @@ describe('parseRupees', () => {
     for (const text of ['', 'abc', '-5', '1.234', '1.', '.5', '1e5', '99999999999']) {
       expect(parseRupees(text)).toBeNull();
     }
+  });
+});
+
+describe('billedPaise', () => {
+  it('bills the fare until cancelled, then only the charge', () => {
+    expect(billedPaise('confirmed', 5000, 0)).toBe(5000);
+    expect(billedPaise('cancelled', 5000, 0)).toBe(0);
+    expect(billedPaise('cancelled', 5000, 700)).toBe(700);
   });
 });
 

@@ -1,12 +1,18 @@
 # Documentation review and implementation status
 
+## Cancelled tickets and charges, 5 November 2026
+
+Migration `20261104_phase3_cancellation` adds a cancellation charge per leg, allows a ticket price of 0, and recalculates bookings that already have cancelled legs. A booking's `ticket_price_paise` is now active fares plus cancellation charges, so all existing reports follow it without query changes. The service charge is not reduced automatically, and restoring a ticket has no credit limit check. The Flutter app has not been updated or run against this: it does not show charges, and its form may not accept a booking priced at 0.
+
+Verified on a disposable local PostgreSQL 17: all thirteen migrations apply from scratch, and all 27 backend tests and `db:reconcile`, including the new `ticket_price_mismatches` check, pass with the session in UTC. The backfill was checked on the local development database, where a booking with a cancelled ₹300 leg moved from ₹2,200.75 to ₹1,900.75. The hosted database has not been migrated.
+
 ## Web booking edits and refunds, 4 November 2026
 
 The web admin can now edit a booking, including its legs, charges and corrected money totals, and refund or reverse a payment from its history. There are no backend changes. The agency cannot be changed on an edit, because a linked journey request would then point at another agency's booking.
 
 Checked in a browser with sample data: over-refund refusal, partial refund, reversal, a required reason for money corrections, stale-edit rejection, adding a connecting leg, and the credit limit warning. `db:reconcile` passes on that data.
 
-Known gaps, not changed here: `PATCH /bookings/:id` has no credit limit check, so the page warns but cannot block. A cancelled ticket's fare still counts in what the agency owes, and because a fare must be at least 1 paisa a fully cancelled booking cannot reach zero. Legs get new ids when edited from this page.
+Known gaps, not changed here: `PATCH /bookings/:id` has no credit limit check, so the page warns but cannot block. Legs get new ids when edited from this page.
 
 ## Web admin page, 4 November 2026
 

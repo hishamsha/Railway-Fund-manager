@@ -116,7 +116,7 @@ export type Packager = { id: string; name: string; phone: string | null; notes: 
   credit_limit_paise: number | null; is_archived: boolean };
 export type Leg = { id: string; sequence: number; boarding_station: string; destination_station: string;
   journey_date: string; train_identifier: string; fare_paise: number; booking_account_id: string | null;
-  pnr: string | null; ticket_status: string };
+  pnr: string | null; ticket_status: string; cancellation_charge_paise: number };
 export type TrackedLeg = Leg & { booking_id: string; packager_id: string; packager_name: string;
   ticket_type: string; booking_person_mobile: string | null };
 export type BookingAccount = { id: string; name: string; kind: string; login_id: string | null;

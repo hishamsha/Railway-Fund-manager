@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiFailure, api, createKeyHolder, type BookingAccount, type JourneyRequest } from '../api';
 import { formatRupees, indiaToday, paiseToInput, parseRupees } from '../money';
 import { Field, Notice, PageHeader, Panel, useAction, useApi, usePackagers } from '../ui';
-import { LegFields, blankLeg, legFares, legsToBody, type LegForm } from './LegFields';
+import { LegFields, blankLeg, legsBilled, legsToBody, legsValid, type LegForm } from './LegFields';
 
 export function NewBooking({ onBooked }: { onBooked: () => void }) {
   const navigate = useNavigate();
@@ -36,14 +36,13 @@ export function NewBooking({ onBooked }: { onBooked: () => void }) {
   const ticketType = legs.length > 1 ? 'connected' : 'direct';
   const quote = useApi<{ charge_paise: number; source: string }>(packagerId
     ? `/service-charge-rules/quote?packager_id=${packagerId}&ticket_type=${ticketType}` : null);
-  const fares = legFares(legs);
-  const fareTotal = fares.reduce<number>((total, fare) => total + (fare ?? 0), 0);
+  const fareTotal = legsBilled(legs);
   const chargePaise = charge.trim() ? parseRupees(charge) : quote.data?.charge_paise ?? 0;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const money = [charge, collected, deducted].filter((text) => text.trim()).map(parseRupees);
-    if (fares.some((fare) => !fare) || money.some((amount) => amount === null)) {
+    if (!legsValid(legs) || money.some((amount) => amount === null)) {
       setError(new Error('Enter amounts in rupees, such as 1250 or 1250.50. Each fare must be more than zero.'));
       return;
     }
