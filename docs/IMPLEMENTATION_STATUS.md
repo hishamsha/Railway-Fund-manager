@@ -1,5 +1,11 @@
 # Documentation review and implementation status
 
+## Web admin page, 4 November 2026
+
+`web/` is a new React and Vite client for the owner, replacing the earlier Next.js client that was never in this repository. It uses the Phase 1 and Phase 2 API with no backend changes. Not included yet: booking edits, refunds, reversals, wallets, PDF reports, password change, and any agency-facing screens.
+
+Checked in a browser against a local PostgreSQL 17 with sample data: sign-in, session restore on reload, refusal of agency logins, today view totals, calendar, request quote and booking, the credit limit block and override, direct and connected bookings, payment recording in exact paise, tracker PNR saves and validation errors, and agency login creation, at desktop and phone widths and in dark mode. CI gains a `web` job for the money unit tests and the production build.
+
 ## Phase 2 agency portal, 4 November 2026
 
 Backend only; the Flutter app is not updated yet. Migration `20261104_phase2_agency` adds an `owner` or `agency` role on users, with each agency login tied to one packager by a composite foreign key, and a `journey_requests` table. The shared `authenticate` check is now owner-only, so all existing business routes refuse agency logins, and `/portal` uses its own check that takes the packager from the login. The owner creates logins and passes on a one-time setup code; there is still no public signup. See `API_IMPLEMENTED.md`.
