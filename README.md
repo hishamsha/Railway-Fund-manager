@@ -4,7 +4,7 @@ Fund tracking for an operator handling bulk train-ticket requests from packagers
 
 ## Architecture
 
-`mobile/` is the primary Flutter application. It uses authenticated REST calls to `backend/`, a Node.js/Express/TypeScript API with Prisma. Supabase provides PostgreSQL only; the app never connects to it directly. `web/` is an additional Next.js client initialized with shadcn preset `b1e5uMopLE`, but it is currently behind the Flutter feature set. Money is stored as integer paise, with customer receipts separate from operator wallet movements.
+`mobile/` is the primary Flutter application. It uses authenticated REST calls to `backend/`, a Node.js/Express/TypeScript API with Prisma. Supabase provides PostgreSQL only; the app never connects to it directly. `web/` is the React and Vite admin page for the owner. Money is stored as integer paise, with customer receipts separate from operator wallet movements.
 
 ## Run the API
 
@@ -33,22 +33,19 @@ The default API is `https://train-fund-manager-api.onrender.com/api/v1`, backed 
 
 The only retained APK is the 64-bit Android profile build at `mobile/build/app/outputs/flutter-apk/app-arm64-v8a-profile.apk` (32.7 MB). It is an optimized, test-signed development artifact, not a signed production release. The APK contains the hosted Render API URL and has been verified to exclude the emulator API URL.
 
-## Run the additional web app
+## Run the web admin
 
-Use two terminals:
+`web/` is the owner's admin page, built with React and Vite. It covers today's journeys and dues, the calendar, journey requests, bookings, the ticket tracker, payments and credit, agencies and their logins, booking accounts and service charges. Agency logins are refused here; the agency portal has an API but no screens yet. Editing or refunding a booking is not in this page yet.
 
-```powershell
-cd backend
-npm.cmd run dev
-```
+Start the API, then in a second terminal:
 
 ```powershell
 cd web
-pnpm.cmd install
-pnpm.cmd run dev
+npm.cmd ci
+npm.cmd run dev
 ```
 
-Open `http://localhost:3001/login`. `web/.env.example` shows the optional server-only `BACKEND_API_URL`; the default is `http://127.0.0.1:3000/api/v1`. The web client does not yet expose M07 collections and statements.
+Open `http://localhost:3001`. The Vite server forwards `/api` to `http://127.0.0.1:3000`; set `BACKEND_URL` to use another API. The access token stays in memory and the refresh token is kept for that browser tab only.
 
 ## Verify current code
 
@@ -62,9 +59,8 @@ cd ../mobile
 flutter.bat analyze
 flutter.bat test
 cd ../web
-pnpm.cmd run typecheck
-pnpm.cmd run lint
-pnpm.cmd run build
+npm.cmd test
+npm.cmd run build
 ```
 
 See [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) for verification status and [`docs/RELEASE_RUNBOOK.md`](docs/RELEASE_RUNBOOK.md) for hosting, signing and recovery steps.

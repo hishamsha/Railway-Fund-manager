@@ -27,6 +27,7 @@ mobile/android/app/build/
 mobile/android/build/
 mobile/.idea/
 mobile/android/local.properties
-# The Next.js prototype has its own Git repository.
-web/
 *.log
+
+web/node_modules/
+web/dist/
