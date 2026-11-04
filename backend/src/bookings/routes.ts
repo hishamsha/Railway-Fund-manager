@@ -5,6 +5,7 @@ import { authenticate } from '../auth/routes.js';
 import { getPrisma } from '../database/prisma.js';
 import { ApiError } from '../middleware/api-error.js';
 import { creditCheck, dateOnly } from '../admin/rules.js';
+import { journeyRequestJson, transitionRequest } from '../journeys/shared.js';
 import { bookingFinancials } from './financials.js';
 import { legJson, legRows, legsBody, packagerNetDue, pnr, quoteServiceCharge, requireAccounts,
   routeFromLegs, rupees, ticketStatus, type LegBody } from './legs.js';
@@ -53,6 +54,8 @@ const createBody = z.strictObject({
   wallet_id: uuid.nullable().optional(),
   payment_due_date: z.iso.date().nullable().optional(),
   allow_over_credit_limit: z.boolean().default(false),
+  // Books an agency's journey request and links it to this booking.
+  journey_request_id: uuid.optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
 }).superRefine((body, ctx) => {
   refineRoute(body, ctx);
@@ -233,6 +236,13 @@ router.post('/', async (request, response, next) => {
         notes: body.notes ?? null,
       } });
       await tx.bookingLeg.createMany({ data: legRows(owner, created.id, legs) });
+      if (body.journey_request_id) {
+        const journey = await transitionRequest(tx,
+          { id: body.journey_request_id, ownerId: owner, packagerId: body.packager_id }, 'book',
+          { status: 'booked', bookingId: created.id });
+        await tx.auditEvent.create({ data: { ownerId: owner, actorUserId: owner, entityType: 'journey_request',
+          entityId: journey.id, action: 'book', afterJson: journeyRequestJson(journey) } });
+      }
       const booking = await tx.booking.findUniqueOrThrow({ where: { id: created.id }, include: withLegs });
       const occurredAt = new Date();
       if (body.initial_collected_paise > 0) {

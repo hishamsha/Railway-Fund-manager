@@ -148,3 +148,50 @@ Every booking has one or more legs (`booking.legs`, ordered by `sequence`). Each
 | GET | `/finance/pending-agencies` | Optional `date`, `include_settled=true` | Per packager `net_due_paise`, `advance_credit_paise`, `overdue_paise`, `oldest_due_date`, `credit_limit_paise`, `available_credit_paise`, `over_limit`; sorted by net due; `totals` |
 
 The runtime role can delete only `booking_legs` (replaced on edit) and `service_charge_rules`; reapply `prisma/runtime_grants.sql` after migrating.
+
+## Agency logins and portal (Phase 2)
+
+`role` on a user is `owner` or `agency`; login, `/auth/me` and refresh return `role` and `packager_id`. Every business route is owner-only and answers an agency login with 403 `FORBIDDEN`. `/auth/me`, `/auth/logout` and `/auth/change-password` work for both.
+
+### Agency logins (owner only)
+
+| Method | Path | Body/query | Result |
+|---|---|---|---|
+| GET | `/agency-users` | Optional `packager_id` | `{ "items": [...] }` with `email`, `display_name`, `packager_id`, `is_active`, `password_set` |
+| POST | `/agency-users` | `packager_id`, `email`, optional `display_name` | 201 `{ "agency_user", "setup_code", "setup_code_expires_at" }`; 409 `EMAIL_IN_USE` |
+| PATCH | `/agency-users/:id` | `display_name`, `is_active` | `{ "agency_user" }`; deactivating ends its sessions and any setup code |
+| POST | `/agency-users/:id/setup-code` | — | `{ "setup_code", "setup_code_expires_at" }`; also how a forgotten password is recovered |
+
+A new login has no usable password. The setup code is shown once and lasts 72 hours; the agency sets a password with `POST /auth/reset-password`, sending the code as `recovery_code`. Archiving a packager closes its portal with 403.
+
+### Portal (agency only)
+
+Every result is limited to the agency's own packager, taken from its login. Another agency's record answers 404. Responses never include booking accounts, wallet deductions, fund balance or the owner's notes.
+
+| Method | Path | Body/query | Result |
+|---|---|---|---|
+| GET | `/portal/summary` | — | `agency`, totals, `net_due_paise`, `advance_credit_paise`, `overdue_paise`, `oldest_due_date`, `credit_limit_paise`, `available_credit_paise`, `upcoming_ticket_count`, `open_request_count` |
+| GET | `/portal/bookings` | `scope=all\|upcoming\|past`, `limit`, `offset` | Bookings with legs (PNR, status, fare), `due_date` and balances; `next_offset` |
+| GET | `/portal/bookings/:id` | — | `{ "booking" }` |
+| GET | `/portal/journeys` | Optional `from_date` (today), `to_date`, `limit`, `offset` | Tickets by journey date, cancelled excluded |
+| GET | `/portal/payments` | `limit`, `offset` | Money movements; `amount_paise` is negative for refunds, reversals and downward corrections |
+| GET | `/portal/journey-requests` | Optional `status`, `limit`, `offset` | The agency's requests |
+| POST | `/portal/journey-requests` | `boarding_station`, `destination_station`, `journey_date`, optional `train_identifier`, `ticket_type`, `passenger_count` (1–500), `note`; UUID `Idempotency-Key` required | 201, or 200 on an exact retry; 422 `JOURNEY_DATE_PAST`; 30 per minute per login |
+| GET | `/portal/journey-requests/:id` | — | `{ "journey_request" }` |
+| POST | `/portal/journey-requests/:id/accept` | `quoted_total_paise` | 409 `QUOTE_CHANGED` when the total is no longer the one on offer |
+| POST | `/portal/journey-requests/:id/cancel` | — | `{ "journey_request" }` |
+
+### Journey requests (owner only)
+
+Status runs `pending` → `quoted` → `accepted` → `booked`. `declined`, `cancelled` and `booked` are final; a change that does not fit the current status answers 409 `REQUEST_STATE_CONFLICT`. An accepted quote cannot be changed.
+
+| Method | Path | Body/query | Result |
+|---|---|---|---|
+| GET | `/journey-requests` | Optional `status`, `packager_id`, `limit`, `offset` | Requests by journey date, with `packager_name` and `requested_by` |
+| GET | `/journey-requests/:id` | — | `{ "journey_request" }` |
+| POST | `/journey-requests/:id/quote` | `ticket_price_paise`, optional `service_charge_paise` (default: the charge rule), `note` | Allowed while `pending` or `quoted`. The agency sees the note |
+| POST | `/journey-requests/:id/decline` | `reason` | The agency sees the reason |
+
+To book a request, call `POST /bookings` for the same packager with `journey_request_id`. It is allowed from `pending`, `quoted` or `accepted`, follows the normal credit check, and does not have to match the quote. Booking and status change happen together or not at all.
+
+After migrating, reapply `prisma/runtime_grants.sql`: the runtime role now also needs INSERT on `app_users` (for agency logins) and access to `journey_requests`.

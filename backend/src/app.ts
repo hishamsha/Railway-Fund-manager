@@ -10,6 +10,9 @@ import { reportRouter } from './reports/routes.js';
 import { bookingAccountRouter } from './accounts/routes.js';
 import { serviceChargeRuleRouter } from './charges/routes.js';
 import { trackerRouter } from './tracker/routes.js';
+import { agencyUserRouter } from './agency/routes.js';
+import { journeyRequestRouter } from './journeys/routes.js';
+import { portalRouter } from './portal/routes.js';
 import { getPrisma } from './database/prisma.js';
 import { errorHandler, notFound } from './middleware/error-handler.js';
 import { requestId } from './middleware/request-id.js';
@@ -33,6 +36,11 @@ app.get('/ready', async (_request, response) => {
 });
 
 app.use('/api/v1/auth', authRouter);
+// Must stay above the routers mounted at /api/v1, whose owner-only check runs
+// for every path below them.
+app.use('/api/v1/portal', portalRouter);
+app.use('/api/v1/agency-users', agencyUserRouter);
+app.use('/api/v1/journey-requests', journeyRequestRouter);
 app.use('/api/v1/packagers', packagerRouter);
 app.use('/api/v1/wallets', walletRouter);
 app.use('/api/v1/bookings', bookingRouter);

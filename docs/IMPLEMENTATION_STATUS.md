@@ -1,5 +1,13 @@
 # Documentation review and implementation status
 
+## Phase 2 agency portal, 4 November 2026
+
+Backend only; the Flutter app is not updated yet. Migration `20261104_phase2_agency` adds an `owner` or `agency` role on users, with each agency login tied to one packager by a composite foreign key, and a `journey_requests` table. The shared `authenticate` check is now owner-only, so all existing business routes refuse agency logins, and `/portal` uses its own check that takes the packager from the login. The owner creates logins and passes on a one-time setup code; there is still no public signup. See `API_IMPLEMENTED.md`.
+
+Verified on a disposable local PostgreSQL 17: all twelve migrations apply from scratch and all 24 backend tests and `db:reconcile` pass. The Phase 1 and Phase 2 integration tests also pass connected as the restricted `app_runtime` role with `runtime_grants.sql` applied. The hosted database has not been migrated.
+
+Found while verifying, not changed here: with the database session in a non-UTC time zone (Asia/Calcutta was tried), `password-recovery.test.ts` fails because an expired recovery code is accepted, and it passes once the session is UTC. Expiry checks read in application code, including agency setup codes, depend on this. Keep the hosted database session in UTC, which is the Supabase default, and check this before relying on another setting.
+
 ## Phase 1 admin API, 2 November 2026
 
 Backend only; the Flutter app is not updated yet. Migration `20261102_phase1_admin` adds booking accounts (personal IRCTC IDs and agent portals, login name only), per-leg fares with PNR and ticket status for direct and connected tickets, service charge rules by packager and ticket type, packager credit limits and optional payment due dates. Existing bookings are backfilled with one leg each. New routes cover booking accounts and their usage, charge rules and quotes, leg tracking, the ticket tracker, a journey calendar, today/tomorrow agenda with payments due and overdue, and packagers with pending payments. Booking creation applies the charge rule when no fee is sent and blocks bookings past a credit limit unless overridden. Existing Flutter requests keep working because single-leg bookings still use the old top-level fields. See [`API_IMPLEMENTED.md`](API_IMPLEMENTED.md).

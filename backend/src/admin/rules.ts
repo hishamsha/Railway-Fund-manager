@@ -7,6 +7,25 @@ export const ticketStatuses = ['requested', 'booked', 'confirmed', 'waitlisted',
   'rac', 'cancelled', 'travelled'] as const;
 export type TicketStatus = typeof ticketStatuses[number];
 
+export const journeyRequestStatuses = ['pending', 'quoted', 'accepted', 'declined', 'cancelled', 'booked'] as const;
+export type JourneyRequestStatus = typeof journeyRequestStatuses[number];
+export type JourneyRequestAction = 'quote' | 'accept' | 'decline' | 'cancel' | 'book';
+
+// Which request states each action can start from. Declined, cancelled and
+// booked requests are final. An accepted quote cannot be changed; the owner
+// declines it and the agency sends a new request.
+export const journeyRequestFrom: Record<JourneyRequestAction, JourneyRequestStatus[]> = {
+  quote: ['pending', 'quoted'],
+  accept: ['quoted'],
+  decline: ['pending', 'quoted', 'accepted'],
+  cancel: ['pending', 'quoted', 'accepted'],
+  book: ['pending', 'quoted', 'accepted'],
+};
+
+export function canTransition(action: JourneyRequestAction, status: string): boolean {
+  return (journeyRequestFrom[action] as string[]).includes(status);
+}
+
 const businessTimeZone = 'Asia/Kolkata';
 const dayMs = 86_400_000;
 
