@@ -35,7 +35,7 @@ The only retained APK is the 64-bit Android profile build at `mobile/build/app/o
 
 ## Run the web admin
 
-`web/` is the owner's admin page, built with React and Vite. It covers today's journeys and dues, the calendar, journey requests, bookings, the ticket tracker, payments and credit, agencies and their logins, booking accounts and service charges. Agency logins are refused here; the agency portal has an API but no screens yet. Editing or refunding a booking is not in this page yet.
+`web/` is the owner's admin page, built with React and Vite. It covers today's journeys and dues, the calendar, journey requests, bookings, the ticket tracker, payments and credit, agencies and their logins, booking accounts and service charges. Agency logins are refused here; the agency portal has an API but no screens yet. Bookings can be edited, and payments refunded or reversed.
 
 Start the API, then in a second terminal:
 

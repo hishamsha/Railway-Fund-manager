@@ -1,13 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Trash2 } from 'lucide-react';
 import { ApiFailure, api, createKeyHolder, type BookingAccount, type JourneyRequest } from '../api';
 import { formatRupees, indiaToday, paiseToInput, parseRupees } from '../money';
-import { Field, Notice, PageHeader, Panel, StatusSelect, useAction, useApi, usePackagers } from '../ui';
-
-type LegForm = { from: string; to: string; date: string; train: string; fare: string; account: string; pnr: string; status: string };
-const blankLeg = (date: string, from = ''): LegForm =>
-  ({ from, to: '', date, train: '', fare: '', account: '', pnr: '', status: 'booked' });
+import { Field, Notice, PageHeader, Panel, useAction, useApi, usePackagers } from '../ui';
+import { LegFields, blankLeg, legFares, legsToBody, type LegForm } from './LegFields';
 
 export function NewBooking({ onBooked }: { onBooked: () => void }) {
   const navigate = useNavigate();
@@ -40,9 +36,7 @@ export function NewBooking({ onBooked }: { onBooked: () => void }) {
   const ticketType = legs.length > 1 ? 'connected' : 'direct';
   const quote = useApi<{ charge_paise: number; source: string }>(packagerId
     ? `/service-charge-rules/quote?packager_id=${packagerId}&ticket_type=${ticketType}` : null);
-  const update = (index: number, change: Partial<LegForm>) =>
-    setLegs(legs.map((leg, position) => position === index ? { ...leg, ...change } : leg));
-  const fares = legs.map((leg) => parseRupees(leg.fare));
+  const fares = legFares(legs);
   const fareTotal = fares.reduce<number>((total, fare) => total + (fare ?? 0), 0);
   const chargePaise = charge.trim() ? parseRupees(charge) : quote.data?.charge_paise ?? 0;
 
@@ -57,9 +51,7 @@ export function NewBooking({ onBooked }: { onBooked: () => void }) {
       try {
         const body = {
           packager_id: packagerId,
-          legs: legs.map((leg, index) => ({ boarding_station: leg.from, destination_station: leg.to, journey_date: leg.date,
-            train_identifier: leg.train, fare_paise: fares[index], booking_account_id: leg.account || null,
-            pnr: leg.pnr.trim() || null, ticket_status: leg.status })),
+          legs: legsToBody(legs),
           ...(charge.trim() ? { service_charge_paise: parseRupees(charge) } : {}),
           initial_collected_paise: collected.trim() ? parseRupees(collected) : 0,
           wallet_deducted_paise: deducted.trim() ? parseRupees(deducted) : 0,
@@ -96,32 +88,7 @@ export function NewBooking({ onBooked }: { onBooked: () => void }) {
             <Field label="Passenger mobile (optional)"><input type="tel" value={mobile} onChange={(event) => setMobile(event.target.value)} placeholder="9876543210" /></Field>
           </div>
         </Panel>
-        <Panel title={legs.length > 1 ? `Connected ticket · ${legs.length} legs` : 'Direct ticket'} action={
-          <button type="button" className="ghost" onClick={() => setLegs([...legs, blankLeg(legs.at(-1)!.date, legs.at(-1)!.to)])}>
-            <Plus aria-hidden="true" size={16} /> Add connecting leg
-          </button>
-        }>
-          {legs.map((leg, index) => (
-            <fieldset className="leg" key={index}>
-              <legend>Leg {index + 1}</legend>
-              <div className="form-grid">
-                <Field label="From station"><input required maxLength={160} value={leg.from} onChange={(event) => update(index, { from: event.target.value })} /></Field>
-                <Field label="To station"><input required maxLength={160} value={leg.to} onChange={(event) => update(index, { to: event.target.value })} /></Field>
-                <Field label="Journey date"><input type="date" required value={leg.date} onChange={(event) => update(index, { date: event.target.value })} /></Field>
-                <Field label="Train"><input required maxLength={160} value={leg.train} onChange={(event) => update(index, { train: event.target.value })} placeholder="12602" /></Field>
-                <Field label="Fare (₹)"><input required inputMode="decimal" value={leg.fare} onChange={(event) => update(index, { fare: event.target.value })} /></Field>
-                <Field label="Booked from"><select value={leg.account} onChange={(event) => update(index, { account: event.target.value })}>
-                  <option value="">Not set</option>
-                  {accounts.data?.items.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                </select></Field>
-                <Field label="PNR (optional)"><input value={leg.pnr} onChange={(event) => update(index, { pnr: event.target.value })} /></Field>
-                <Field label="Status"><StatusSelect label={`Leg ${index + 1} status`} value={leg.status} onChange={(status) => update(index, { status })} /></Field>
-              </div>
-              {legs.length > 1 && <button type="button" className="ghost danger-text" onClick={() => setLegs(legs.filter((_, position) => position !== index))}>
-                <Trash2 aria-hidden="true" size={16} /> Remove leg {index + 1}</button>}
-            </fieldset>
-          ))}
-        </Panel>
+        <LegFields legs={legs} onChange={setLegs} accounts={accounts.data?.items ?? []} />
         <Panel title="Money">
           <div className="form-grid">
             <Field label="Service charge (₹)" hint={charge.trim() ? 'Your amount replaces the rule.'

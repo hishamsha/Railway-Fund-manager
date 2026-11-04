@@ -1,8 +1,16 @@
 # Documentation review and implementation status
 
+## Web booking edits and refunds, 4 November 2026
+
+The web admin can now edit a booking, including its legs, charges and corrected money totals, and refund or reverse a payment from its history. There are no backend changes. The agency cannot be changed on an edit, because a linked journey request would then point at another agency's booking.
+
+Checked in a browser with sample data: over-refund refusal, partial refund, reversal, a required reason for money corrections, stale-edit rejection, adding a connecting leg, and the credit limit warning. `db:reconcile` passes on that data.
+
+Known gaps, not changed here: `PATCH /bookings/:id` has no credit limit check, so the page warns but cannot block. A cancelled ticket's fare still counts in what the agency owes, and because a fare must be at least 1 paisa a fully cancelled booking cannot reach zero. Legs get new ids when edited from this page.
+
 ## Web admin page, 4 November 2026
 
-`web/` is a new React and Vite client for the owner, replacing the earlier Next.js client that was never in this repository. It uses the Phase 1 and Phase 2 API with no backend changes. Not included yet: booking edits, refunds, reversals, wallets, PDF reports, password change, and any agency-facing screens.
+`web/` is a new React and Vite client for the owner, replacing the earlier Next.js client that was never in this repository. It uses the Phase 1 and Phase 2 API with no backend changes. Not included yet: wallets, PDF reports, password change, and any agency-facing screens.
 
 Checked in a browser against a local PostgreSQL 17 with sample data: sign-in, session restore on reload, refusal of agency logins, today view totals, calendar, request quote and booking, the credit limit block and override, direct and connected bookings, payment recording in exact paise, tracker PNR saves and validation errors, and agency login creation, at desktop and phone widths and in dark mode. CI gains a `web` job for the money unit tests and the production build.
 

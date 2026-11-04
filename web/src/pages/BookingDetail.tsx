@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from 'react';
-import { useParams } from 'react-router-dom';
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { Pencil } from 'lucide-react';
 import { api, createKeyHolder, type BookingAccount, type Leg, type Packager } from '../api';
-import { formatDate, formatRupees, parseRupees } from '../money';
+import { formatDate, formatRupees, paiseToInput, parseRupees } from '../money';
 import { AgencyLink, Due, Empty, Field, Loading, Notice, PageHeader, Panel, Route, Stat, StatusBadge, useAction, useApi } from '../ui';
 
 type Booking = { id: string; packager_id: string; boarding_station: string; destination_station: string; journey_date: string;
@@ -9,12 +10,13 @@ type Booking = { id: string; packager_id: string; boarding_station: string; dest
 type Financials = { ticket_price_paise: number; service_charge_paise: number; total_payable_paise: number; collected_paise: number;
   wallet_deducted_paise: number; fund_balance_paise: number; balance_due_paise: number; advance_credit_paise: number };
 type Entry = { id: string; source: string; entry_type: string; amount_paise: number; method: string | null;
-  occurred_at: string; note: string | null };
+  original_entry_id: string | null; occurred_at: string; note: string | null };
 
-const entryLabels: Record<string, string> = { receipt: 'Payment received', refund: 'Refund', reversal: 'Payment reversed',
-  collection_adjustment_increase: 'Collection corrected up', collection_adjustment_decrease: 'Collection corrected down',
-  booking_debit: 'Wallet deduction', deduction_adjustment_decrease: 'Deduction corrected down', wallet_refund: 'Wallet refund',
-  debit_reversal: 'Deduction reversed' };
+const entryLabels: Record<string, string> = { receipt: 'Payment received', refund: 'Refund to agency', reversal: 'Payment reversed',
+  collection_adjustment_increase: 'Collected total corrected up', collection_adjustment_decrease: 'Collected total corrected down',
+  booking_debit: 'Wallet deduction', deduction_adjustment_decrease: 'Wallet deduction corrected down', wallet_refund: 'Wallet refund',
+  debit_reversal: 'Wallet deduction reversed' };
+const negativeEntries = ['refund', 'reversal', 'collection_adjustment_decrease', 'deduction_adjustment_decrease', 'wallet_refund', 'debit_reversal'];
 
 function MoneyForm({ title, label, path, withMethod, onSaved }: { title: string; label: string; path: string; withMethod?: boolean; onSaved: () => void }) {
   const [amount, setAmount] = useState('');
@@ -29,7 +31,7 @@ function MoneyForm({ title, label, path, withMethod, onSaved }: { title: string;
     void run(async () => {
       try {
         await api(path, { method: 'POST', idempotencyKey: keys.current(), body: { amount_paise: paise,
-          ...(withMethod ? { method } : {}), occurred_at: new Date().toISOString(), note: note.trim() || null } });
+          ...(withMethod ? { method } : {}), occurred_at: keys.stamp(), note: note.trim() || null } });
         keys.settle();
       } catch (failure) { keys.settle(failure); throw failure; }
       setAmount(''); setNote('');
@@ -53,6 +55,56 @@ function MoneyForm({ title, label, path, withMethod, onSaved }: { title: string;
   );
 }
 
+/** Refund gives back part or all of a payment. Reverse cancels what is left of one recorded by mistake. */
+function CorrectPayment({ bookingId, entry, remaining, mode, onDone, onCancel }: { bookingId: string; entry: Entry; remaining: number;
+  mode: 'refund' | 'reverse'; onDone: () => void; onCancel: () => void }) {
+  const [amount, setAmount] = useState(paiseToInput(remaining));
+  const [method, setMethod] = useState(entry.method ?? 'upi');
+  const [reason, setReason] = useState('');
+  const [keys] = useState(createKeyHolder);
+  const { busy, error, setError, run } = useAction();
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const paise = parseRupees(amount);
+    if (mode === 'refund' && (!paise || paise > remaining)) {
+      setError(new Error(`Enter an amount above zero and no more than ${formatRupees(remaining)}.`)); return;
+    }
+    void run(async () => {
+      try {
+        if (mode === 'refund') {
+          await api(`/bookings/${bookingId}/customer-refunds`, { method: 'POST', idempotencyKey: keys.current(), body: {
+            original_receipt_id: entry.id, amount_paise: paise, method, occurred_at: keys.stamp(), reason: reason.trim() } });
+        } else {
+          await api(`/finance/${entry.id}/reverse`, { method: 'POST', idempotencyKey: keys.current(),
+            body: { occurred_at: keys.stamp(), reason: reason.trim() } });
+        }
+        keys.settle();
+      } catch (failure) { keys.settle(failure); throw failure; }
+      onDone();
+    });
+  };
+  return (
+    <form className="correction" onSubmit={submit}>
+      <h3>{mode === 'refund' ? 'Refund this payment' : `Reverse ${formatRupees(remaining)} of this payment`}</h3>
+      <p className="muted small">{mode === 'refund'
+        ? 'Use this when you gave money back to the agency. What they owe on this booking goes up by this amount.'
+        : 'Use this when the payment was recorded by mistake or never arrived, such as a bounced transfer. What they owe goes up by this amount.'} This can't be undone.</p>
+      <div className="form-grid">
+        {mode === 'refund' && <Field label="Amount (₹)" hint={`Up to ${formatRupees(remaining)}`}><input required inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} /></Field>}
+        {mode === 'refund' && <Field label="Method"><select value={method} onChange={(event) => setMethod(event.target.value)}>
+          <option value="upi">UPI</option><option value="cash">Cash</option><option value="bank">Bank</option><option value="other">Other</option>
+        </select></Field>}
+        <Field label="Reason (required)"><input required minLength={3} maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)} /></Field>
+      </div>
+      <Notice error={error} />
+      <div className="row">
+        <button className="primary" disabled={busy}>{busy ? 'Saving…' : mode === 'refund' ? 'Save refund' : 'Reverse payment'}</button>
+        <button type="button" className="ghost" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
 export function BookingDetail() {
   const { id } = useParams();
   const detail = useApi<{ booking: Booking; financials: Financials }>(`/bookings/${id}`);
@@ -60,15 +112,23 @@ export function BookingDetail() {
   const accounts = useApi<{ items: BookingAccount[] }>('/booking-accounts?include_inactive=true');
   const booking = detail.data?.booking;
   const packager = useApi<{ packager: Packager }>(booking ? `/packagers/${booking.packager_id}` : null);
+  const [correcting, setCorrecting] = useState<{ id: string; mode: 'refund' | 'reverse' } | null>(null);
   if (detail.error) return <Notice error={detail.error} />;
   if (!booking || !detail.data) return <Loading />;
   const money = detail.data.financials;
   const refresh = () => { detail.reload(); entries.reload(); };
   const accountName = (accountId: string | null) => accounts.data?.items.find((account) => account.id === accountId)?.name ?? '—';
+  const items = entries.data?.items ?? [];
+  const remainingOf = (entry: Entry) => entry.amount_paise - items
+    .filter((other) => other.original_entry_id === entry.id)
+    .reduce((total, other) => total + other.amount_paise, 0);
+  const hasCancelled = booking.legs.some((leg) => leg.ticket_status === 'cancelled');
   return (
     <>
       <PageHeader title={`${booking.boarding_station} → ${booking.destination_station}`}
-        subtitle={`${formatDate(booking.journey_date)} · ${booking.ticket_type === 'connected' ? 'Connected' : 'Direct'} ticket${booking.booking_person_mobile ? ` · ${booking.booking_person_mobile}` : ''}`} />
+        subtitle={`${formatDate(booking.journey_date)} · ${booking.ticket_type === 'connected' ? 'Connected' : 'Direct'} ticket${booking.booking_person_mobile ? ` · ${booking.booking_person_mobile}` : ''}`}
+        action={<Link className="button ghost" to={`/bookings/${id}/edit`}><Pencil aria-hidden="true" size={16} /> Edit booking</Link>} />
+      {hasCancelled && <div className="notice warn" role="status">A ticket on this booking is cancelled, but its fare still counts in what the agency owes. To change that, edit the fare and record any refund.</div>}
       <div className="stats">
         <Stat label="Total payable" value={formatRupees(money.total_payable_paise)} />
         <Stat label="Collected" value={formatRupees(money.collected_paise)} />
@@ -109,21 +169,45 @@ export function BookingDetail() {
         <MoneyForm title="Record a wallet deduction" label="Amount deducted (₹)" path={`/bookings/${id}/deductions`} onSaved={refresh} />
       </div>
       <Panel title="History">
-        {!entries.data?.items.length ? <Empty>No money recorded yet.</Empty> : (
+        {!items.length ? <Empty>No money recorded yet.</Empty> : (
           <div className="table-wrap"><table>
-            <thead><tr><th>When</th><th>What</th><th>Method</th><th>Note</th><th className="num">Amount</th></tr></thead>
-            <tbody>{entries.data.items.map((entry) => (
-              <tr key={`${entry.source}-${entry.id}`}>
-                <td className="nowrap">{new Date(entry.occurred_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}</td>
-                <td>{entryLabels[entry.entry_type] ?? entry.entry_type.replaceAll('_', ' ')}</td>
-                <td>{entry.method?.toUpperCase() ?? '—'}</td>
-                <td>{entry.note ?? '—'}</td>
-                <td className="num">{formatRupees(entry.amount_paise)}</td>
-              </tr>
-            ))}</tbody>
+            <thead><tr><th>When</th><th>What</th><th>Method</th><th>Note or reason</th><th className="num">Amount</th><th><span className="sr-only">Actions</span></th></tr></thead>
+            <tbody>{items.map((entry) => {
+              const remaining = entry.source === 'customer' && entry.entry_type === 'receipt' ? remainingOf(entry) : 0;
+              const open = correcting?.id === entry.id ? correcting.mode : null;
+              return (
+                <HistoryRow key={`${entry.source}-${entry.id}`} entry={entry} remaining={remaining} open={open}
+                  onOpen={(mode) => setCorrecting({ id: entry.id, mode })}
+                  panel={open && <CorrectPayment bookingId={booking.id} entry={entry} remaining={remaining} mode={open}
+                    onCancel={() => setCorrecting(null)} onDone={() => { setCorrecting(null); refresh(); }} />} />
+              );
+            })}</tbody>
           </table></div>
         )}
       </Panel>
+    </>
+  );
+}
+
+function HistoryRow({ entry, remaining, open, onOpen, panel }: { entry: Entry; remaining: number; open: string | null;
+  onOpen: (mode: 'refund' | 'reverse') => void; panel: ReactNode }) {
+  const negative = negativeEntries.includes(entry.entry_type);
+  const isReceipt = entry.source === 'customer' && entry.entry_type === 'receipt';
+  return (
+    <>
+      <tr>
+        <td className="nowrap">{new Date(entry.occurred_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}</td>
+        <td>{entryLabels[entry.entry_type] ?? entry.entry_type.replaceAll('_', ' ')}
+          {isReceipt && remaining < entry.amount_paise && <div className="muted small">{remaining > 0 ? `${formatRupees(remaining)} left to refund` : 'Fully refunded or reversed'}</div>}</td>
+        <td>{entry.method?.toUpperCase() ?? '—'}</td>
+        <td>{entry.note ?? '—'}</td>
+        <td className={`num ${negative ? 'danger-text' : ''}`}>{formatRupees(negative ? -entry.amount_paise : entry.amount_paise)}</td>
+        <td>{remaining > 0 && !open && <div className="row nowrap-row">
+          <button className="ghost" onClick={() => onOpen('refund')}>Refund</button>
+          <button className="ghost" onClick={() => onOpen('reverse')}>Reverse</button>
+        </div>}</td>
+      </tr>
+      {panel && <tr><td colSpan={6}>{panel}</td></tr>}
     </>
   );
 }
