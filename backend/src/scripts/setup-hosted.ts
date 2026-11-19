@@ -35,8 +35,11 @@ function askHidden(question: string): Promise<string> {
           stdin.off('data', onData);
           stdin.setRawMode(false);
           stdin.pause();
-          stdout.write('\n');
-          done(value.trim());
+          // A terminal can wrap pasted text in markers, and Ctrl+V can arrive as a
+          // control character. Neither belongs in the value.
+          const cleaned = value.replace(/\u001b\[20[01]~/g, '').replace(/[\u0000-\u001f\u007f]/g, '').trim();
+          stdout.write(`\n   Received ${cleaned.length} characters.\n`);
+          done(cleaned);
           return;
         }
         if (char === '\u0003') { stdin.setRawMode(false); process.exit(130); }
